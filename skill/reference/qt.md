@@ -1,6 +1,6 @@
 # Qt desktop platform
 
-For native desktop applications built with **Qt for Python** — primarily PySide6 or PyQt6, using Qt Widgets and/or Qt Quick — on Windows, macOS, and Linux.
+For native desktop applications built with **Qt for Python**, primarily PySide6 or PyQt6 using Qt Widgets and/or Qt Quick, on Windows, macOS, and Linux.
 
 Desktop is an interaction model, not a skin. The user brings decades of muscle memory for windows, menus, shortcuts, focus, selection, dialogs, tables, files, and mouse/keyboard workflows. Brand can shape palette, typography, iconography, density, charts, and domain visualization, but standard desktop behavior remains recognizable. For data-heavy professional tools, Qt Widgets is usually the natural default; use Qt Quick when touch, fluid animation, or a scene-oriented UI is genuinely central rather than to make a desktop tool resemble a web app.
 
