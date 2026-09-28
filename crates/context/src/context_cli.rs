@@ -67,7 +67,7 @@ fn hook_enabled_at(root: &str, env: &Env) -> bool {
 }
 
 fn is_native(platform: Option<&str>) -> bool {
-    matches!(platform, Some("ios") | Some("android") | Some("adaptive"))
+    matches!(platform, Some("ios") | Some("android") | Some("adaptive") | Some("desktop"))
 }
 
 /// JS: automaticHookMode(ctx)
@@ -558,6 +558,7 @@ fn load_native_platform_references(platform: Option<&str>, provider: &Provider) 
         Some("adaptive") => vec!["ios", "android"],
         Some("ios") => vec!["ios"],
         Some("android") => vec!["android"],
+        Some("desktop") => vec!["qt"],
         _ => vec![],
     };
     names
@@ -684,7 +685,7 @@ pub fn run(args: &[String], io: &mut Io) -> i32 {
     if ctx.platform.is_none() {
         if let Some(raw) = extract_section_value(ctx.product.as_deref(), "Platform") {
             if !raw.is_empty() {
-                parts.push(format!("WARNING: PRODUCT.md's `## Platform` value `{}` is not recognized; treating the project as `web`. Valid values are `web`, `ios`, `android`, or `adaptive` (cross-platform, ships both). If this project is native, fix the field (name the design language the app renders, not the toolchain) and surface it to the user.", raw));
+                parts.push(format!("WARNING: PRODUCT.md's `## Platform` value `{}` is not recognized; treating the project as `web`. Valid values are `web`, `ios`, `android`, `adaptive` (cross-platform mobile, ships both), or `desktop`. If this project is native, fix the field (name the design language the app renders, not the toolchain) and surface it to the user.", raw));
             }
         }
     }
@@ -698,6 +699,12 @@ pub fn run(args: &[String], io: &mut Io) -> i32 {
 #[cfg(test)]
 mod skill_version_tests {
     use super::parse_skill_frontmatter_version as v;
+
+    #[test]
+    fn desktop_platform_uses_native_routing() {
+        assert!(super::is_native(Some("desktop")));
+        assert!(!super::is_native(Some("web")));
+    }
 
     /// Values recorded from origin/main's `parseSkillFrontmatterVersion` (#703).
     #[test]

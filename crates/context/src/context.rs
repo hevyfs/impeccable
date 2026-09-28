@@ -20,9 +20,9 @@ pub const WORKSPACE_DISCOVERY_IGNORED_DIRS: [&str; 12] = [
     "node_modules", ".git", "dist", "build", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", "coverage",
     "vendor", "vendors",
 ];
-const VISUAL_SOURCE_DIRS: [&str; 7] = ["src", "app", "pages", "components", "site", "public", "styles"];
+const VISUAL_SOURCE_DIRS: [&str; 10] = ["src", "app", "pages", "components", "site", "public", "styles", "ui", "views", "widgets"];
 const STYLE_EXTENSIONS: [&str; 5] = [".css", ".scss", ".sass", ".less", ".styl"];
-const UI_EXTENSIONS: [&str; 7] = [".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte", ".astro"];
+const UI_EXTENSIONS: [&str; 10] = [".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte", ".astro", ".py", ".qml", ".ui"];
 const VISUAL_SCAN_FILE_LIMIT: usize = 250;
 const VISUAL_SCAN_DEPTH_LIMIT: usize = 4;
 
@@ -1105,7 +1105,7 @@ pub fn extract_platform(product: Option<&str>) -> Option<String> {
     if value.is_empty() {
         return None;
     }
-    if matches!(value.as_str(), "web" | "ios" | "android" | "adaptive") {
+    if matches!(value.as_str(), "web" | "ios" | "android" | "adaptive" | "desktop") {
         return Some(value);
     }
     let tokens: Vec<&str> = value
@@ -1122,6 +1122,46 @@ pub fn extract_platform(product: Option<&str>) -> Option<String> {
     None
 }
 
+#[cfg(test)]
+mod platform_value_tests {
+    use super::extract_platform;
+
+    #[test]
+    fn desktop_is_a_first_class_product_platform() {
+        assert_eq!(
+            extract_platform(Some("# Product\n\n## Platform\n\ndesktop\n")),
+            Some("desktop".to_string())
+        );
+        assert_eq!(extract_platform(Some("# Product\n\n## Platform\n\nqt\n")), None);
+    }
+
+    #[test]
+    fn detects_existing_pyside_widget_implementation() {
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "impeccable-qt-visual-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        let src = root.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(
+            src.join("main_window.py"),
+            "from PySide6.QtWidgets import QApplication, QMainWindow, QWidget\n\nclass MainWindow(QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.setCentralWidget(QWidget(self))\n",
+        )
+        .unwrap();
+
+        assert!(super::has_visual_implementation(root.to_str().unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
 // ─── hasVisualImplementation ───────────────────────────────────────────────
 
 static RE_BLOCK_COMMENT: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?s)/\*.*?\*/").unwrap());
@@ -1134,6 +1174,13 @@ static RE_TOKEN_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u:\b)(?:tokens?
 static RE_STYLE_LINK: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)<style(?-u:\b)|<link[^>]+stylesheet").unwrap());
 static RE_CLASS_ATTR: Lazy<Regex> = Lazy::new(|| Regex::new("(?i)class(?:Name)?\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]").unwrap());
 static RE_STYLED: Lazy<Regex> = Lazy::new(|| Regex::new("(?i)class(?:Name)?\\s*=|style\\s*=|styled\\(|css`").unwrap());
+static RE_QT_PYTHON_UI: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?m)^\s*(?:from\s+(?:PySide6|PyQt6|PySide2|PyQt5)\.(?:QtWidgets|QtQuick|QtQuickWidgets|QtGui)\s+import|import\s+(?:PySide6|PyQt6|PySide2|PyQt5)(?:\.|\s|$))").unwrap()
+});
+static RE_QML_UI: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?m)^\s*import\s+QtQuick(?:\.Controls|\.Layouts)?(?:\s|$)").unwrap());
+static RE_QT_DESIGNER_UI: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#"(?i)<ui\s+version=|<widget\s+class="#).unwrap());
 static RE_MIN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\.min\.[a-z]+$").unwrap());
 
 fn js_slice_utf16(s: &str, n: usize) -> &str {
@@ -1186,6 +1233,15 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
         let e2 = RE_HTML_COMMENT.replace_all(&e1, "");
         let evidence = RE_LINE_COMMENT.replace_all(&e2, "").into_owned();
         let ev_len = utf16_len(&evidence);
+        if ext == ".py" && ev_len > 80 && RE_QT_PYTHON_UI.is_match(&evidence) {
+            return true;
+        }
+        if ext == ".qml" && ev_len > 120 && RE_QML_UI.is_match(&evidence) {
+            return true;
+        }
+        if ext == ".ui" && RE_QT_DESIGNER_UI.is_match(&evidence) {
+            return true;
+        }
         if is_style {
             let custom = RE_CUSTOM_PROP.find_iter(&evidence).count();
             let visual = RE_VISUAL_DECL.find_iter(&evidence).count();

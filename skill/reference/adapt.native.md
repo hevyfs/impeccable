@@ -1,58 +1,72 @@
-> **Additional context needed**: target platforms/devices and usage contexts.
+> **Additional context needed**: target platform/device or desktop OS, window-size range, input methods, and usage context.
 
-Adapt an existing **native** design (`ios` / `android` / `adaptive`) to a different context: another device class, orientation, platform, or origin. The trap is treating adaptation as scaling. The job is rethinking the experience for the new context, inside the platform conventions of [ios.md](ios.md) / [android.md](android.md); read the target platform's reference before planning if Setup hasn't already.
+Adapt an existing **native** design (`ios` / `android` / `adaptive` / `desktop`) to a different context: another device class, orientation, platform, desktop operating system, window size, input posture, or origin. The trap is treating adaptation as scaling. The job is rethinking the experience for the new context inside the applicable [ios.md](ios.md), [android.md](android.md), or [qt.md](qt.md) conventions; read the target platform reference before planning if Setup has not already loaded it.
 
 ## Assess Adaptation Challenge
 
-1. **Source context**: what was it designed for, and what assumptions did it make? (Phone-only? Portrait-only? One platform's idioms? A website?)
-2. **Target context**: which device class (phone, tablet, foldable), orientation, platform, and usage posture (one-handed on the go vs two-handed at rest)?
-3. **What breaks**: navigation that doesn't fit the target, layouts that stretch instead of restructure, gestures or controls that don't exist there?
+1. **Source context**: what was it designed for, and what assumptions did it make? Phone-only? Portrait-only? Fixed desktop window? Mouse-first? One OS's idioms? A website?
+2. **Target context**: which device/window class, platform/OS, orientation, scaling/DPI range, input methods, and usage posture?
+3. **What breaks**: navigation that does not fit, layouts that stretch instead of restructure, commands that become undiscoverable, gestures/hover/shortcuts that do not exist in the target, or information density that no longer matches the work?
 
-## Adaptation Strategies
+## Mobile: Phone → Tablet / Large Screen
 
-### Phone → Tablet (iPad / large screens)
+- **Restructure, don't stretch.** Use size classes (iOS) / window size classes (Android).
+- **Navigation changes shape**: tab bar may become a sidebar on iPad; Android navigation bar becomes a rail or drawer on expanded width.
+- **Use the width**: master-detail, multi-column grids, and popovers where appropriate.
+- **Multitasking is a size, not an edge case**: iPad Split View and Android multi-window can hand you a compact window on a tablet.
 
-- **Restructure, don't stretch.** A scaled-up phone UI on a tablet is the failure mode. Use size classes (iOS) / window size classes (Android) to switch structure.
-- **Navigation changes shape**: tab bar stays or becomes a sidebar on iPad; Android navigation bar becomes a rail or drawer on expanded width.
-- **Use the width**: split view / master-detail (list + detail side by side), multi-column grids, popovers where phones used sheets.
-- **Multitasking is a size, not an edge case**: iPad Split View and Android multi-window can hand you a phone-width window on a tablet; size-class-driven layout handles both for free.
+## Desktop Qt: Window and Workstation Adaptation
 
-### Orientation & foldables
+- **Layouts, not coordinates.** Move fixed geometry into layouts; use `sizePolicy`, sensible minimums, stretch factors, `QSplitter`, and scroll areas only where content genuinely overflows. <!-- rule:qt-adapt-layouts-not-coordinates -->
+- **Restructure by available space.** A narrow laptop window may collapse secondary panes or dock them; a wide workstation can expose comparison/detail panes. Preserve capability rather than hiding core tasks. <!-- rule:qt-adapt-restructure-window -->
+- **Treat docks and splitters as user-owned workspace.** Allow resizing/rearrangement when the workflow benefits, and persist/restore geometry and main-window state without restoring a window off-screen. <!-- rule:qt-adapt-persist-workspace -->
+- **High DPI is a matrix.** Test fractional scaling and moving the same window between monitors with different DPR. Use device-independent widget geometry and DPR-aware assets rather than multiplying coordinates manually. <!-- rule:qt-adapt-high-dpi -->
+- **Keyboard and mouse remain first-class.** Narrowing a window must not remove the action from menus, shortcuts, context menus, or focus traversal. Hover may enhance; it may not be the only explanation or access path. <!-- rule:qt-adapt-input-parity -->
+- **OS adaptation is not a reskin.** Windows, macOS, and Linux differ in menu placement, standard shortcuts, dialog/button conventions, fonts, native file pickers, and window chrome. Let Qt's style/actions/standard keys carry those differences before adding platform conditionals. <!-- rule:qt-adapt-os-conventions -->
 
-- Landscape restructures (side-by-side panes, repositioned controls); never clip or letterbox. Lock orientation only when the task truly demands it.
-- Foldables (Android): react to posture and hinge via window size classes; test folded, unfolded, and tabletop.
+## Platform → Platform
 
-### Platform → platform (iOS ↔ Android)
+Translate idioms; never transplant them.
 
-Translate idioms; never transplant them:
+| Source | Target | Translation |
+|---|---|---|
+| iOS | Android | HIG navigation/controls → Material navigation/controls; preserve product intent |
+| Android | iOS | Material idioms → HIG idioms; preserve product intent |
+| Mobile | Qt desktop | touch navigation → menu/actions/toolbars/docks/splitters; expose keyboard shortcuts and denser data views |
+| Qt desktop | Mobile | desktop command surfaces → touch navigation and sheets; simplify density without deleting core capability |
+| Web | Qt desktop | browser nav/cards/dropdowns → native window, actions, standard widgets, model/view, keyboard focus |
+| Qt desktop OS A | Qt desktop OS B | keep product system, let QStyle/QPalette/standard keys/dialogs/window chrome resolve OS behavior |
 
-| iOS | Android |
-|---|---|
-| Tab bar | Navigation bar / rail / drawer |
-| Edge-swipe back, back chevron | Predictive Back gesture / button |
-| Switch, segmented control, system pickers | Material switch, chips, Material pickers |
-| Action sheet | Bottom sheet / Material dialog |
-| SF Symbols, SF Pro, Dynamic Type | Material Symbols, Roboto, sp scaling |
-| Semantic system colors, materials | Material color roles, tonal elevation |
-| System push/sheet transitions | Container transform, shared-axis, fade-through |
+### Web → Qt desktop
 
-Rebuild navigation and controls in the target's vocabulary; carry over the brand's expressive layer (palette intent, type accent, motion personality) through the target's theming system.
+Reconform, don't wrap and recolor. Replace webpage-shaped navigation with a desktop command model, card grids with appropriate panes/tables/forms, HTML-shaped controls with Qt controls, hover-only affordances with explicit actions/tooltips/focus, and CSS breakpoint thinking with resizable layouts. A QMainWindow that still behaves like a browser dashboard has not been adapted.
 
-### Web → native (porting a website or web app)
+### Mobile ↔ desktop
 
-Reconform, don't reflow. Replace web navigation with the platform's model, HTML-shaped controls with platform controls, hover affordances with touch-first ones, and px-based type with Dynamic Type / sp. Then treat the result to the full platform reference; the slop test there is the acceptance bar.
+Change information density and command topology intentionally. Desktop can expose persistent navigation, multi-pane comparison, rich tables, context menus, and shortcuts because keyboard/mouse and larger windows support them. Mobile must prioritize touch reach, safe areas, and progressive disclosure. Do not keep either platform's shell and merely resize it.
 
 ## Implement & Verify
 
-- Drive structure from **size classes / window size classes**, never from device-model checks.
-- Respect safe areas and window insets in every new configuration (notch, hinge, status bar, keyboard).
-- Test on simulators for breadth, then real hardware for truth: at least one phone and one tablet per shipped platform, both orientations, split-screen where supported.
+**Mobile**
+- Drive structure from size/window classes, not device model checks.
+- Respect safe areas/window insets and keyboard/IME.
+- Test simulators for breadth and hardware for posture, gesture, and performance truth.
 
-When the adaptation feels native to each context, hand off to `{{command_prefix}}impeccable polish` for the final pass.
+**Desktop Qt**
+- Run the real application, not a browser approximation.
+- Exercise the minimum supported window, a normal laptop window, and a large/wide workspace.
+- Test the target OS scaling matrix; on Windows include fractional scaling. Move the app between mixed-DPI monitors when hardware allows.
+- Verify light/dark/high-contrast appearances that the target OS/app supports, keyboard-only operation, standard shortcuts, focus order, long/localized strings, and persisted/restored window state.
+- Use Qt/Python UI tests (`QTest`, pytest-qt, or the project's existing harness) for interaction regressions; use screenshots from the running native window for visual evidence.
+- Say which OS/scaling/device produced each visual claim.
+
+When the adaptation is native to its target context, hand off to `{{command_prefix}}impeccable polish` for the final pass.
 
 **NEVER**:
 - Ship a stretched phone layout on a tablet
-- Port one platform's controls or navigation onto the other
-- Hide core functionality on smaller devices (if it matters, make it work)
-- Lock orientation to dodge a layout bug
-- Trust simulators alone (posture, gestures, and performance need hardware)
+- Ship a fixed-coordinate desktop layout that clips when resized or scaled
+- Port one platform's navigation/control vocabulary unchanged onto another
+- Use hover as the only route to a desktop action
+- Hide core functionality on smaller contexts instead of restructuring it
+- Lock orientation or window size to dodge a layout bug
+- Trust one DPI, one theme, one window size, or one simulator as the whole verification matrix
