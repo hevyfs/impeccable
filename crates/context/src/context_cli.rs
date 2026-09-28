@@ -706,6 +706,41 @@ mod skill_version_tests {
         assert!(!super::is_native(Some("web")));
     }
 
+    #[test]
+    fn desktop_platform_loads_qt_reference() {
+        use crate::provider::Provider;
+        use std::fs;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "impeccable-qt-reference-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        let reference = root.join("reference");
+        fs::create_dir_all(&reference).unwrap();
+        fs::write(reference.join("qt.md"), "# Qt desktop platform\nfixture\n").unwrap();
+
+        let provider = Provider {
+            id: "source".to_string(),
+            command_prefix: "/".to_string(),
+            command: "/impeccable".to_string(),
+            skill_dir: Some(root.to_string_lossy().into_owned()),
+            self_cmd: "impeccable".to_string(),
+        };
+        let loaded = super::load_native_platform_references(Some("desktop"), &provider);
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].0, "qt");
+        assert!(loaded[0].1.contains("Qt desktop platform"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// Values recorded from origin/main's `parseSkillFrontmatterVersion` (#703).
     #[test]
     fn frontmatter_version_shapes() {
