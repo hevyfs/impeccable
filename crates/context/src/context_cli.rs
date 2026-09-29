@@ -561,7 +561,7 @@ fn load_native_platform_references(platform: Option<&str>, project_root: &str, p
         Some("desktop") => vec!["desktop"],
         _ => vec![],
     };
-    if platform == Some("desktop") && has_qt_for_python_dependency(project_root) {
+    if platform == Some("desktop") && has_qt_for_python_evidence(project_root) {
         names.push("qt");
     }
     names

@@ -20,11 +20,14 @@ pub const WORKSPACE_DISCOVERY_IGNORED_DIRS: [&str; 12] = [
     "node_modules", ".git", "dist", "build", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", "coverage",
     "vendor", "vendors",
 ];
-const VISUAL_SOURCE_DIRS: [&str; 12] = ["src", "app", "pages", "components", "site", "public", "styles", "ui", "views", "widgets", "dialogs", "windows"];
+const VISUAL_SOURCE_DIRS: [&str; 12] = ["ui", "views", "widgets", "dialogs", "windows", "src", "app", "pages", "components", "site", "public", "styles"];
 const STYLE_EXTENSIONS: [&str; 5] = [".css", ".scss", ".sass", ".less", ".styl"];
 const UI_EXTENSIONS: [&str; 10] = [".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte", ".astro", ".py", ".qml", ".ui"];
 const VISUAL_SCAN_FILE_LIMIT: usize = 250;
 const VISUAL_SCAN_DEPTH_LIMIT: usize = 4;
+const QT_PYTHON_PREFILTER_FILE_LIMIT: usize = 500;
+const QT_PYTHON_EVIDENCE_FILE_LIMIT: usize = 500;
+const QT_REQUIREMENTS_FILE_LIMIT: usize = 32;
 const QT_FOR_PYTHON_DEPENDENCY_FILES: [&str; 7] = [
     "pyproject.toml",
     "requirements.txt",
@@ -38,12 +41,113 @@ static RE_QT_FOR_PYTHON_DEPENDENCY: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)(?:^|[^a-z0-9_.-])(?:pyside6|pyqt6|pyside2|pyqt5)(?:$|[^a-z0-9_.-])").unwrap()
 });
 
-pub fn has_qt_for_python_dependency(project_root: &str) -> bool {
-    QT_FOR_PYTHON_DEPENDENCY_FILES.iter().any(|rel| {
-        safe_read(&jsp::join(&[project_root, rel]))
-            .map(|raw| RE_QT_FOR_PYTHON_DEPENDENCY.is_match(&raw))
-            .unwrap_or(false)
+fn dependency_text_has_qt(raw: &str) -> bool {
+    raw.lines().any(|line| {
+        let code = line.split('#').next().unwrap_or("").trim();
+        !code.is_empty() && RE_QT_FOR_PYTHON_DEPENDENCY.is_match(code)
     })
+}
+
+pub fn has_qt_for_python_dependency(project_root: &str) -> bool {
+    if QT_FOR_PYTHON_DEPENDENCY_FILES.iter().any(|rel| {
+        safe_read(&jsp::join(&[project_root, rel]))
+            .map(|raw| dependency_text_has_qt(&raw))
+            .unwrap_or(false)
+    }) {
+        return true;
+    }
+    let requirements = jsp::join(&[project_root, "requirements"]);
+    if !exists(&requirements) {
+        return false;
+    }
+    let mut queue: std::collections::VecDeque<(String, usize)> = std::collections::VecDeque::from([(requirements, 0)]);
+    let mut scanned = 0usize;
+    while let Some((dir, depth)) = queue.pop_front() {
+        let Some(entries) = read_dir_entries(&dir) else { continue };
+        for entry in entries {
+            if entry.is_dir {
+                if depth < 2 && !entry.name.starts_with('.') {
+                    queue.push_back((jsp::join(&[&dir, &entry.name]), depth + 1));
+                }
+                continue;
+            }
+            if !entry.is_file {
+                continue;
+            }
+            let lower = entry.name.to_lowercase();
+            if !(lower.ends_with(".txt") || lower.ends_with(".in")) {
+                continue;
+            }
+            if scanned >= QT_REQUIREMENTS_FILE_LIMIT {
+                return false;
+            }
+            scanned += 1;
+            if safe_read(&jsp::join(&[&dir, &entry.name]))
+                .map(|raw| dependency_text_has_qt(&raw))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn has_qt_for_python_source_evidence(project_root: &str) -> bool {
+    if project_root.is_empty() {
+        return false;
+    }
+    let root = jsp::resolve(project_root, &[]);
+    let mut queue: std::collections::VecDeque<(String, usize)> = std::collections::VecDeque::new();
+    for rel in VISUAL_SOURCE_DIRS {
+        let dir = jsp::join(&[&root, rel]);
+        if exists(&dir) {
+            queue.push_back((dir, 0));
+        }
+    }
+    let mut scanned = 0usize;
+    let inspect = |file_path: &str, scanned: &mut usize| -> bool {
+        if jsp::extname(file_path).to_lowercase() != ".py" || *scanned >= QT_PYTHON_EVIDENCE_FILE_LIMIT {
+            return false;
+        }
+        *scanned += 1;
+        safe_read(file_path)
+            .map(|raw| RE_QT_PYTHON_BINDING_IMPORT.is_match(js_slice_utf16(&raw, 64 * 1024)))
+            .unwrap_or(false)
+    };
+    if let Some(entries) = read_dir_entries(&root) {
+        for entry in entries {
+            if entry.is_file && inspect(&jsp::join(&[&root, &entry.name]), &mut scanned) {
+                return true;
+            }
+        }
+    }
+    while let Some((dir, depth)) = queue.pop_front() {
+        if scanned >= QT_PYTHON_EVIDENCE_FILE_LIMIT {
+            break;
+        }
+        let Some(entries) = read_dir_entries(&dir) else { continue };
+        for entry in entries {
+            if entry.is_dir {
+                if depth < VISUAL_SCAN_DEPTH_LIMIT
+                    && !entry.name.starts_with('.')
+                    && !WORKSPACE_DISCOVERY_IGNORED_DIRS.contains(&entry.name.as_str())
+                {
+                    queue.push_back((jsp::join(&[&dir, &entry.name]), depth + 1));
+                }
+            } else if entry.is_file && inspect(&jsp::join(&[&dir, &entry.name]), &mut scanned) {
+                return true;
+            }
+            if scanned >= QT_PYTHON_EVIDENCE_FILE_LIMIT {
+                break;
+            }
+        }
+    }
+    false
+}
+
+pub fn has_qt_for_python_evidence(project_root: &str) -> bool {
+    has_qt_for_python_dependency(project_root) || has_qt_for_python_source_evidence(project_root)
 }
 
 pub fn all_context_names() -> Vec<&'static str> {
@@ -1144,7 +1248,7 @@ pub fn extract_platform(product: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod platform_value_tests {
-    use super::{extract_platform, has_qt_for_python_dependency, has_visual_implementation, VISUAL_SCAN_FILE_LIMIT};
+    use super::{extract_platform, has_qt_for_python_dependency, has_qt_for_python_evidence, has_visual_implementation, VISUAL_SCAN_FILE_LIMIT};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1268,6 +1372,33 @@ mod platform_value_tests {
             fs::remove_dir_all(root).unwrap();
         }
     }
+
+    #[test]
+    fn qt_for_python_evidence_uses_source_and_nested_requirements_but_ignores_comments() {
+        let root = temp_root("qt-evidence");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "# PySide6 is mentioned in documentation only\n[project]\ndependencies = []\n",
+        )
+        .unwrap();
+        assert!(!has_qt_for_python_dependency(root.to_str().unwrap()));
+
+        fs::write(
+            root.join("src/main_window.py"),
+            "from PyQt6 import QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    pass\n",
+        )
+        .unwrap();
+        assert!(has_qt_for_python_evidence(root.to_str().unwrap()));
+
+        fs::remove_file(root.join("src/main_window.py")).unwrap();
+        fs::create_dir_all(root.join("requirements")).unwrap();
+        fs::write(root.join("requirements/base.txt"), "PySide6>=6.7\n").unwrap();
+        assert!(has_qt_for_python_dependency(root.to_str().unwrap()));
+        assert!(has_qt_for_python_evidence(root.to_str().unwrap()));
+
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 // ─── hasVisualImplementation ───────────────────────────────────────────────
@@ -1321,8 +1452,9 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
     }
     let mut scanned: usize = 0;
     let mut styled: usize = 0;
+    let mut python_prefiltered: usize = 0;
 
-    let inspect = |file_path: &str, scanned: &mut usize, styled: &mut usize| -> bool {
+    let inspect = |file_path: &str, scanned: &mut usize, styled: &mut usize, python_prefiltered: &mut usize| -> bool {
         let ext = jsp::extname(file_path).to_lowercase();
         let is_style = STYLE_EXTENSIONS.contains(&ext.as_str());
         let is_ui = UI_EXTENSIONS.contains(&ext.as_str());
@@ -1334,6 +1466,10 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
             return false;
         }
         let prefetched_python = if ext == ".py" {
+            if *python_prefiltered >= QT_PYTHON_PREFILTER_FILE_LIMIT {
+                return false;
+            }
+            *python_prefiltered += 1;
             let Some(raw) = safe_read(file_path) else { return false };
             let body = js_slice_utf16(&raw, 64 * 1024);
             if !RE_QT_PYTHON_BINDING_IMPORT.is_match(body) {
@@ -1413,7 +1549,7 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
 
     if let Some(entries) = read_dir_entries(&root) {
         for e in entries {
-            if e.is_file && inspect(&jsp::join(&[&root, &e.name]), &mut scanned, &mut styled) {
+            if e.is_file && inspect(&jsp::join(&[&root, &e.name]), &mut scanned, &mut styled, &mut python_prefiltered) {
                 return true;
             }
         }
@@ -1432,7 +1568,7 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
                     continue;
                 }
                 queue.push_back((jsp::join(&[&dir, &e.name]), depth + 1));
-            } else if e.is_file && inspect(&jsp::join(&[&dir, &e.name]), &mut scanned, &mut styled) {
+            } else if e.is_file && inspect(&jsp::join(&[&dir, &e.name]), &mut scanned, &mut styled, &mut python_prefiltered) {
                 return true;
             }
             if scanned >= VISUAL_SCAN_FILE_LIMIT {

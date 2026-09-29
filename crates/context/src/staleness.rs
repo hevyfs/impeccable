@@ -1,7 +1,7 @@
 //! JS: lib/staleness.mjs (Tier 1)
 
 use crate::artifact_schema::*;
-use crate::context::{has_qt_for_python_dependency, BriefSummary, Ctx, TargetCandidate};
+use crate::context::{has_qt_for_python_evidence, BriefSummary, Ctx, TargetCandidate};
 use crate::jsp;
 use crate::util::{exists, js_trim, mtime_ms, read_json, safe_read};
 use once_cell::sync::Lazy;
@@ -182,11 +182,11 @@ pub fn check_native_platform_evidence(
             }
         }
     }
-    let has_qt_for_python = has_qt_for_python_dependency(project_root);
+    let has_qt_for_python = has_qt_for_python_evidence(project_root);
     if has_qt_for_python {
         evidence.push(NativeEvidence {
             platform: "desktop",
-            reason: "a PySide/PyQt Qt for Python dependency",
+            reason: "PySide/PyQt Qt for Python evidence",
         });
     }
     if evidence.is_empty() {
@@ -577,7 +577,7 @@ mod qt_desktop_evidence_tests {
         );
 
         assert_eq!(findings.len(), 1);
-        assert!(findings[0].summary.contains("PySide/PyQt Qt for Python dependency"));
+        assert!(findings[0].summary.contains("PySide/PyQt Qt for Python evidence"));
         assert!(findings[0].fix.contains("`desktop`"));
 
         fs::remove_dir_all(root).unwrap();
