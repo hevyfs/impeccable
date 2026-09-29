@@ -1,67 +1,100 @@
-Run systematic **technical** quality checks on a native app (`ios` / `android` / `adaptive`) and generate a comprehensive report. Don't fix issues; document them for other commands to address.
+Run systematic **technical** quality checks on a native app (`ios` / `android` / `adaptive` / `desktop`) and generate a comprehensive report. Don't fix issues; document them for other commands to address.
 
-This is a code-level audit, not a design critique. Audit from source (SwiftUI / UIKit / Compose / React Native / Flutter); no browser tooling or `impeccable detect` applies. Score against the platform reference(s): [ios.md](ios.md) / [android.md](android.md), both for `adaptive`. Read them before scoring if Setup hasn't already. The report skeleton mirrors [audit.md](audit.md); keep the two in sync when changing it.
+This is a code-level audit, not a design critique. Audit from source. Mobile native may be SwiftUI / UIKit / Compose / React Native / Flutter; desktop native may use Qt, WPF/WinUI, Avalonia, GTK, AppKit, JavaFX, wxWidgets, or another desktop toolkit. No browser tooling or `impeccable detect` applies. Score against the platform reference(s): [ios.md](ios.md), [android.md](android.md), both for `adaptive`, or [desktop.md](desktop.md) for `desktop`. Apply [qt.md](qt.md) only when Qt for Python evidence is present. Read the applicable baseline and any loaded toolkit overlay before scoring if Setup has not already injected them. The report skeleton mirrors [audit.md](audit.md); keep the two in sync when changing shared reporting structure.
 
 ## Diagnostic Scan
 
-Run comprehensive checks across 5 dimensions. Score each dimension 0-4 using the criteria below.
+### Platform-specific coverage
 
-### 1. Accessibility (VoiceOver / TalkBack)
+For **iOS / Android / adaptive mobile**, explicitly check portrait and landscape where supported; compact and expanded widths; split-screen/multi-window; safe areas and system bars; software keyboard behavior; Dynamic Type/font scaling; foldables/hinges where the shipped device class can encounter them; and platform transitions such as iOS navigation bars/sheets versus Android app bars/back behavior. An adaptive app must preserve the product while respecting each OS interaction model rather than flattening both into one visual grammar.
 
-**Check for**:
-- **Missing labels**: interactive elements without accessibility labels, traits/roles, or state announcements
-- **Reading and focus order**: illogical traversal, unreachable controls, focus lost on navigation
-- **Text scaling**: fixed point sizes defeating Dynamic Type (iOS) or px instead of sp (Android); layouts that clip or overlap at large sizes
-- **Touch targets**: below 44 pt (iOS) / 48 dp (Android), or crammed without spacing
-- **Reduce Motion ignored**: parallax and large slides with no crossfade alternative
-- **Contrast**: text failing contrast in either appearance, light or dark
+For **desktop**, explicitly check keyboard and mouse operation; minimum, normal, and large windows; maximized/restored state; system scaling and mixed-DPI monitors; inactive windows; menus, shortcuts, dialogs, file/clipboard/drag-and-drop behavior; and platform-specific window conventions. For Qt for Python, apply the additional checks from `qt.md`.
 
-**Score 0-4**: 0=Screen reader unusable, 1=Major gaps (unlabeled controls, no scaling), 2=Partial (labels exist, order or scaling breaks), 3=Good (minor gaps), 4=Excellent (labeled, ordered, scales cleanly, Reduce Motion honored)
+Run comprehensive checks across 5 dimensions. Score each dimension 0-4 using the criteria below. Apply only the checks relevant to the declared platform; do not penalize a desktop app for lacking mobile gestures or a mobile app for lacking desktop menus.
 
-### 2. Performance
+### 1. Accessibility & Input
 
 **Check for**:
-- **Slow startup**: heavy work on launch before first frame
-- **Unvirtualized lists**: long content without FlatList / LazyColumn / List recycling
-- **Main-thread jank**: synchronous work in scroll or gesture paths, dropped frames on 60/120 Hz
-- **Wasted rendering**: unnecessary re-renders (React Native) or recompositions (Compose); missing memoization/keys
-- **Image handling**: full-size images decoded for thumbnails, no caching
-- **App weight**: bloated JS bundle or binary, unused dependencies
+- **Missing semantics**: interactive elements without accessible labels, roles/traits, state, or useful descriptions
+- **Reading and focus order**: illogical traversal, unreachable controls, focus lost after navigation or updates
+- **Scaling**: fixed type/layout choices that clip at large Dynamic Type / Android font scale / desktop DPI and text scaling
+- **Target sizing and input reachability**: undersized mobile touch targets; desktop controls that are mouse-only, hover-only, or absent from the tab/shortcut path
+- **Motion preferences**: nonessential motion with no reduced-motion path where the platform exposes one
+- **Contrast and non-color cues**: state or validation that disappears in dark/high-contrast appearance or is conveyed only by color
 
-**Score 0-4**: 0=Janky everywhere, 1=Major problems (unvirtualized lists, slow launch), 2=Partial, 3=Good (minor improvements possible), 4=Excellent (fast launch, smooth scroll, lean)
+**Desktop baseline**: inspect keyboard traversal, standard shortcuts, visible focus, accessible names/descriptions, pointer-independent command access, and system text/display scaling.
+
+**Qt overlay**: when Qt is present, additionally inspect `focusPolicy`, tab order, label buddies/mnemonics, `QKeySequence.StandardKey` / actions, and `accessibleName` / `accessibleDescription` for icon-only or custom controls.
+
+**Score 0-4**: 0=major tasks inaccessible without one input mode/assistive technology, 1=major gaps, 2=partial, 3=good with minor gaps, 4=excellent across the shipped input and accessibility paths.
+
+### 2. Performance & Responsiveness
+
+**Check for**:
+- **Slow startup**: heavy work before the first usable frame/window
+- **Unvirtualized or unmodeled data**: long mobile lists without recycling; large desktop tables/trees/grids built as thousands of heavyweight child controls instead of the toolkit's scalable collection/model mechanism
+- **Main/GUI-thread blocking**: synchronous I/O, calculation, parsing, or rendering in interaction paths
+- **Wasted rendering**: unnecessary recomposition/re-rendering, full scene/table rebuilds for local changes, expensive paint handlers
+- **Image/graphics handling**: full-size assets for thumbnails, unnecessary raster work, DPR mistakes, repeated plot/scene allocations
+- **App weight**: unused dependencies, assets, plugins, or bundled runtimes
+
+**Desktop baseline**: look for expensive work on the UI thread, blocking event handlers, unnecessary full-view rebuilds, unsafe UI access from worker threads, and heavyweight per-cell/per-row controls at scale.
+
+**Qt overlay**: when Qt is present, inspect slots, `paintEvent`, model callbacks, QWidget access from worker threads, per-cell widgets, and avoidable `QGraphicsScene` churn.
+
+**Score 0-4**: 0=interaction regularly stalls, 1=major blocking/jank, 2=partial, 3=good with isolated hotspots, 4=fast startup and responsive interaction under realistic data.
 
 ### 3. Appearance & Theming
 
 **Check for**:
-- **Hard-coded colors**: raw hex instead of semantic system colors (iOS) / Material color roles (Android) / design tokens
-- **Broken dark appearance**: missing dark variants, poor contrast in dark, quick inverts
-- **Dynamic Color** (Android 12+): no static fallback scheme, or ignored where it fits
-- **Off-platform materials**: hand-rolled visual materials where system materials or tonal elevation are expected
+- **Hard-coded visual roles** that bypass the platform/design token system
+- **Broken dark/light/high-contrast appearance**
+- **Incomplete state vocabulary**: active/inactive, selected, focused, disabled, hover/pressed where applicable, error/warning/success
+- **Off-platform materials/control painting** that sacrifices interaction semantics for decoration
+- **Inconsistent typography, iconography, spacing, and density** across the product
 
-**Score 0-4**: 0=Hard-coded everything, 1=Minimal tokens, 2=Partial (tokens exist, inconsistently used), 3=Good (minor hard-coded values), 4=Excellent (semantic throughout, both appearances first-class)
+**Desktop baseline**: prefer the toolkit/system semantic color and state model over literal per-control styling; verify active/inactive, selected, focused, disabled, read-only, warning, and error states across supported appearances.
+
+**Qt overlay**: when Qt is present, prefer `QStyle` / `QPalette` roles and their Active/Inactive/Disabled groups; review application-wide QSS for brittle global selectors, literal state colors, overwritten focus indicators, and custom-painted controls that ignore `QStyleOption`.
+
+**Score 0-4**: 0=ad hoc styling everywhere, 1=minimal system, 2=partial/inconsistent, 3=coherent with minor drift, 4=semantic, state-complete, and robust across appearances.
 
 ### 4. Platform Conformance (CRITICAL)
 
-Score against the loaded platform reference(s), including their slop tests. **Check for**:
-- **Broken system gestures**: edge-swipe back disabled (iOS), predictive Back hijacked (Android)
-- **Inset violations**: content under the notch, Dynamic Island, home indicator, status bar, or keyboard
-- **Off-platform navigation**: custom global nav, overloaded tab bars, iOS patterns on Android or vice versa
-- **Web-shaped controls**: HTML-style buttons, custom toggles, hover-dependent affordances
-- **Icon drift**: mixed icon sets instead of SF Symbols / Material Symbols
-- **System drift**: repeated shortcuts or decorative patterns that conflict with the product, platform, or established design system
+Score against the loaded platform reference(s), including their slop tests.
 
-**Score 0-4**: 0=Web port (nothing native), 1=Heavy violations (3-4 kinds), 2=Some (1-2 noticeable), 3=Mostly conformant (subtle issues), 4=Fully native (a fluent user trusts every screen)
+**Mobile checks**:
+- system navigation/back gestures and insets
+- platform controls, icon language, safe areas, modality
+- no web-shaped controls or hover-dependent affordances
 
-### 5. Adaptivity
+**Desktop checks**:
+- recognizable desktop command structure where the workflow needs it: menus/commands, toolbars or command bars, context actions, status feedback, and resizable work areas rather than mobile navigation transplanted onto a large window
+- standard shortcuts, button/dialog conventions, file pickers, clipboard/drag-drop when those workflows exist
+- native window management and resizing; no gratuitous fake title bars or fixed-canvas app shells
+- standard toolkit controls keep their interaction behavior even when branded
+- data-heavy views use desktop-native selection, headers, keyboard navigation, sorting/filtering affordances, and contextual actions
 
-**Check for**:
-- **Stretched phone layouts**: tablet/iPad rendering a scaled-up phone UI instead of using size classes / window size classes
-- **Orientation breakage**: landscape clipping, ignored, or locked without reason
-- **Keyboard/IME handling**: inputs hidden behind the keyboard, no inset adjustment
-- **Multitasking**: iPad Split View / Android multi-window breaking layout
-- **Foldables**: hinge-unaware layouts on posture change (Android)
+**Qt overlay**: when Qt is present, verify QAction-based command reuse where appropriate, QMenuBar/QToolBar/QStatusBar/QDockWidget/QSplitter semantics, standard Qt controls, native dialogs, and model/view behavior.
 
-**Score 0-4**: 0=One screen size only, 1=Major breakage (landscape or tablet broken), 2=Partial, 3=Good (minor edge cases), 4=Excellent (adapts across sizes, orientations, and windowing)
+**Score 0-4**: 0=foreign interaction model that fights the platform, 1=heavy violations, 2=several noticeable violations, 3=mostly conformant, 4=a platform-fluent user can operate every core workflow without relearning standard behavior.
+
+### 5. Adaptivity & Environment
+
+**Mobile checks**:
+- phone/tablet restructuring, orientation, safe-area/IME handling, multitasking, foldables where applicable
+
+**Desktop checks**:
+- useful minimum through large window sizes; no clipped fixed geometry
+- layout behavior under the supported OS display/text scaling matrix
+- mixed-DPI/multi-monitor moves and restored window geometry
+- light/dark/high-contrast or other target-OS appearance changes
+- platform differences across the operating systems the app actually ships to
+- long localization strings, numeric/unit formatting, and right-to-left behavior when in scope
+
+**Qt overlay**: when Qt is present, include device-independent geometry, DPR-aware assets/custom painting, mixed-DPI moves, and Qt window-state restoration.
+
+**Score 0-4**: 0=one fixed environment only, 1=major resize/DPI/device breakage, 2=partial, 3=good with minor edge cases, 4=robust across the shipped size, scale, and windowing matrix.
 
 ## Generate Report
 
@@ -69,17 +102,18 @@ Score against the loaded platform reference(s), including their slop tests. **Ch
 
 | # | Dimension | Score | Key Finding |
 |---|-----------|-------|-------------|
-| 1 | Accessibility | ? | [most critical issue or "--"] |
-| 2 | Performance | ? | |
+| 1 | Accessibility & Input | ? | [most critical issue or "--"] |
+| 2 | Performance & Responsiveness | ? | |
 | 3 | Appearance & Theming | ? | |
 | 4 | Platform Conformance | ? | |
-| 5 | Adaptivity | ? | |
+| 5 | Adaptivity & Environment | ? | |
 | **Total** | | **??/20** | **[Rating band]** |
 
 **Rating bands**: 18-20 Excellent (minor polish), 14-17 Good (address weak dimensions), 10-13 Acceptable (significant work needed), 6-9 Poor (major overhaul), 0-5 Critical (fundamental issues)
 
 ### Platform Conformance Verdict
-**Start here.** Pass/fail: does this read as a native app or a ported website? List specific violations. Be brutally honest.
+
+**Start here.** Pass/fail: does the product read and behave as a native app for its declared platform, or as a ported interaction model? List concrete violations. For desktop, distinguish visual branding from interaction conformance: a custom visual system is not a platform violation; removing standard desktop behavior often is. Apply toolkit-specific judgments only from an actually loaded overlay such as `qt.md`.
 
 ### Executive Summary
 - Audit Health Score: **??/20** ([rating band])
@@ -98,28 +132,29 @@ Tag every issue with **P0-P3 severity**:
 For each issue, document:
 - **[P?] Issue name**
 - **Location**: Screen, file, line
-- **Category**: Accessibility / Performance / Theming / Conformance / Adaptivity
+- **Category**: Accessibility & Input / Performance / Theming / Conformance / Adaptivity
 - **Impact**: How it affects users
-- **Guideline**: The HIG / Material rule it violates (if applicable)
-- **Recommendation**: How to fix it
+- **Guideline**: The loaded platform rule it violates
+- **Recommendation**: How to fix it in the actual framework
 - **Suggested command**: Which command to use (prefer: /impeccable adapt, /impeccable animate, /impeccable audit, /impeccable bolder, /impeccable clarify, /impeccable colorize, /impeccable critique, /impeccable delight, /impeccable distill, /impeccable document, /impeccable harden, /impeccable layout, /impeccable onboard, /impeccable optimize, /impeccable overdrive, /impeccable polish, /impeccable quieter, /impeccable shape, /impeccable typeset)
 
 ### Patterns & Systemic Issues
 
-Identify recurring problems that indicate systemic gaps rather than one-off mistakes:
-- "Hard-coded colors appear in 15+ screens, should use semantic colors"
-- "Touch targets consistently below 44 pt throughout the tab bar and list rows"
+Identify recurring problems that indicate systemic gaps rather than one-off mistakes, for example:
+- "Literal colors bypass QPalette roles across the shared Qt theme, so disabled/focus states drift together."
+- "Long-running calculations execute synchronously from button slots in multiple tabs."
+- "Tab order follows construction order rather than the form's reading order."
 
 ### Positive Findings
 
-Note what's working well: good practices to maintain and replicate.
+Note what is working well and should be preserved.
 
 ## Recommended Actions
 
 List recommended commands in priority order (P0 first, then P1, then P2):
 
-1. **[P?] `/command-name`**: Brief description (specific context from audit findings)
-2. **[P?] `/command-name`**: Brief description (specific context)
+1. **[P?] `/command-name`**: Brief description
+2. **[P?] `/command-name`**: Brief description
 
 **Rules**: Only recommend commands from: /impeccable adapt, /impeccable animate, /impeccable audit, /impeccable bolder, /impeccable clarify, /impeccable colorize, /impeccable critique, /impeccable delight, /impeccable distill, /impeccable document, /impeccable harden, /impeccable layout, /impeccable onboard, /impeccable optimize, /impeccable overdrive, /impeccable polish, /impeccable quieter, /impeccable shape, /impeccable typeset. Map findings to the most appropriate command. End with `/impeccable polish` as the final step if any fixes were recommended.
 
@@ -132,8 +167,9 @@ After presenting the summary, tell the user:
 **IMPORTANT**: Be thorough but actionable. Too many P3 issues creates noise. Focus on what actually matters.
 
 **NEVER**:
-- Report issues without explaining impact (why does this matter?)
-- Provide generic recommendations (be specific and actionable)
-- Skip positive findings (celebrate what works)
-- Forget to prioritize (everything can't be P0)
+- Report issues without explaining impact
+- Apply mobile-only checks to desktop or desktop-only checks to mobile
+- Provide generic recommendations
+- Skip positive findings
+- Forget to prioritize
 - Report false positives without verification

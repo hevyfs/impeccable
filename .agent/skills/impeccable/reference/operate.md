@@ -1,6 +1,6 @@
 # Operate mode depth (and Read notes)
 
-When design SERVES the product: app UIs, admin dashboards, settings panels, data tables, tools, authenticated surfaces, anything where the user is in a task. The essentials live in SKILL.md's modes and [craft-floor.md](craft-floor.md); this file is extended depth, written for Operate surfaces. Read surfaces (docs, guides, long-form) take SKILL.md's Read mode plus this file's typography and consistency rules; their prose measure and navigation matter more than component density.
+When design SERVES the product: app UIs, admin dashboards, settings panels, data tables, native desktop tools, authenticated surfaces, anything where the user is in a task. The essentials live in SKILL.md's modes and [craft-floor.md](craft-floor.md); this file is extended depth, written for Operate surfaces. Read surfaces (docs, guides, long-form) take SKILL.md's Read mode plus this file's typography and consistency rules; their prose measure and navigation matter more than component density. On native platforms, the loaded platform reference owns control anatomy, units, windowing, focus, and verification; web-specific examples below are illustrative, not an instruction to recreate browser idioms.
 
 ## The product slop test
 
@@ -11,7 +11,7 @@ Product UI's failure mode isn't flatness, it's strangeness without purpose: over
 ## Typography
 
 - **One family is often right.** Product UIs don't need display/body pairing. A well-tuned sans carries headings, buttons, labels, body, data.
-- **Fixed rem scale, not fluid.** Clamp-sized headings don't serve product UI. Users view at consistent DPI, and a fluid h1 that shrinks in a sidebar looks worse, not better.
+- **Fixed role-based scale, not fluid display math.** On web this commonly means a fixed rem scale; on native use the platform typography units and system scaling from its reference. Clamp-sized headings do not serve product UI.
 - **Tighter scale ratio.** 1.125–1.2 between steps is typical. More type elements here than on brand surfaces; exaggerated contrast creates noise.
 - **Line length still applies for prose** (65–75ch). Data and compact UI can run denser; tables at 120ch+ are fine.
 
@@ -34,7 +34,7 @@ Every interactive component has: default, hover, focus, active, disabled, loadin
 - Skeleton states for loading, not spinners in the middle of content.
 - Empty states that teach the interface, not "nothing here."
 - Consistent affordances across the surface. Same button shape. Same form-control vocabulary. Same icon style.
-- Overlays escape their container. An absolutely positioned dropdown inside an `overflow: hidden` or `overflow: auto` ancestor gets clipped; reach for `<dialog>`, the popover API, `position: fixed`, or a portal.
+- Overlays escape their container. On web, use a top-layer/dialog/popover/portal rather than clipping inside overflow. On native desktop, use the toolkit's popup, menu, completer, tooltip, or dialog surfaces rather than simulating browser overlay mechanics.
 
 ## Motion
 
