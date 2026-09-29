@@ -1,9 +1,9 @@
 //! JS: lib/staleness.mjs (Tier 1)
 
 use crate::artifact_schema::*;
-use crate::context::{BriefSummary, Ctx, TargetCandidate};
+use crate::context::{has_qt_for_python_evidence, BriefSummary, Ctx, TargetCandidate};
 use crate::jsp;
-use crate::util::{exists, js_trim, mtime_ms, read_json};
+use crate::util::{exists, js_trim, mtime_ms, read_json, safe_read};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{Map, Value};
@@ -182,6 +182,13 @@ pub fn check_native_platform_evidence(
             }
         }
     }
+    let has_qt_for_python = has_qt_for_python_evidence(project_root);
+    if has_qt_for_python {
+        evidence.push(NativeEvidence {
+            platform: "desktop",
+            reason: "PySide/PyQt Qt for Python evidence",
+        });
+    }
     if evidence.is_empty() {
         return vec![];
     }
@@ -191,7 +198,15 @@ pub fn check_native_platform_evidence(
             platforms.push(e.platform);
         }
     }
-    let suggested = if platforms.len() > 1 || platforms.contains(&"adaptive") { "adaptive" } else { platforms[0] };
+    let has_desktop = platforms.contains(&"desktop");
+    let has_mobile = platforms.iter().any(|p| matches!(*p, "ios" | "android" | "adaptive"));
+    let suggested = if has_desktop && !has_mobile {
+        "desktop"
+    } else if !has_desktop && (platforms.len() > 1 || platforms.contains(&"adaptive")) {
+        "adaptive"
+    } else {
+        platforms[0]
+    };
     let declared = if platform == Some("web") {
         "PRODUCT.md declares `## Platform: web`"
     } else if product.map(|p| !p.is_empty()).unwrap_or(false) {
@@ -199,20 +214,25 @@ pub fn check_native_platform_evidence(
     } else {
         "no PRODUCT.md declares a platform, so the project resolves to web"
     };
+    let fix = if has_desktop && has_mobile {
+        "This project root carries both desktop Qt and mobile native evidence. Confirm target boundaries and give each independently designed target its own PRODUCT.md with the correct `## Platform`; one inherited platform record cannot describe both interaction models.".to_string()
+    } else {
+        format!(
+            "Ask the user whether `## Platform` should be `{}`. If it should, write the value and load the matching native reference before designing.",
+            suggested
+        )
+    };
     vec![finding(
         "platform-native-evidence",
         "PRODUCT.md",
         product_path.map(|s| s.to_string()),
         "mention",
         format!(
-            "{}, but the project carries {}. Web guidance is being applied to a native codebase, and the iOS and Android references never load.",
+            "{}, but the project carries {}. Web guidance is being applied to a native or desktop codebase, and the matching platform reference never loads.",
             declared,
             evidence.iter().map(|e| e.reason).collect::<Vec<_>>().join(" and ")
         ),
-        format!(
-            "Ask the user whether `## Platform` should be `{}`. If it should, write the value and load the matching native reference before designing.",
-            suggested
-        ),
+        fix,
     )]
 }
 
@@ -523,3 +543,76 @@ pub fn collect_boot_findings(ctx: &Ctx, cwd: &str, extras: &BootExtras) -> Vec<F
 }
 
 pub static _UNUSED: Lazy<()> = Lazy::new(|| ());
+
+
+#[cfg(test)]
+mod qt_desktop_evidence_tests {
+    use super::check_native_platform_evidence;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn pyside_dependency_suggests_desktop_platform() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "impeccable-qt-evidence-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\ndependencies = [\"PySide6>=6.7\", \"pyqtgraph>=0.13\"]\n",
+        )
+        .unwrap();
+
+        let findings = check_native_platform_evidence(
+            root.to_str().unwrap(),
+            None,
+            Some("# Product\n\n## Positioning\nFixture\n"),
+            Some("PRODUCT.md"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].summary.contains("PySide/PyQt Qt for Python evidence"));
+        assert!(findings[0].fix.contains("`desktop`"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mixed_mobile_and_desktop_evidence_does_not_collapse_to_adaptive() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "impeccable-mixed-native-evidence-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        fs::create_dir_all(root.join("android")).unwrap();
+        fs::write(root.join("android/build.gradle"), "plugins {}\n").unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\ndependencies = [\"PyQt6>=6.7\"]\n",
+        )
+        .unwrap();
+
+        let findings = check_native_platform_evidence(
+            root.to_str().unwrap(),
+            None,
+            Some("# Product\n\n## Positioning\nFixture\n"),
+            Some("PRODUCT.md"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].fix.contains("both desktop Qt and mobile native evidence"));
+        assert!(!findings[0].fix.contains("should be `adaptive`"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+}

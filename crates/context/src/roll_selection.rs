@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 pub const COMPOSITION_GRAINS: [&str; 4] = ["product", "flow", "view", "region"];
-pub const COMPOSITION_PLATFORMS: [&str; 3] = ["web", "ios", "android"];
+pub const COMPOSITION_PLATFORMS: [&str; 4] = ["web", "ios", "android", "desktop"];
 
 fn s<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(|x| x.as_str())
@@ -313,5 +313,56 @@ pub fn select_approved_compositions(
             platform_excluded,
         },
         picks,
+    }
+}
+
+#[cfg(test)]
+mod desktop_platform_tests {
+    use super::select_approved_compositions;
+    use serde_json::json;
+
+    #[test]
+    fn desktop_filter_keeps_desktop_and_platform_neutral_compositions() {
+        let compositions = vec![
+            json!({
+                "id": "desktop-only",
+                "familyId": "desktop-family",
+                "status": "approved",
+                "platforms": ["desktop"]
+            }),
+            json!({
+                "id": "web-only",
+                "familyId": "web-family",
+                "status": "approved",
+                "platforms": ["web"]
+            }),
+            json!({
+                "id": "platform-neutral",
+                "familyId": "neutral-family",
+                "status": "approved"
+            }),
+        ];
+
+        let selection = select_approved_compositions(
+            "surface",
+            "desktop-fixture",
+            0,
+            None,
+            None,
+            Some("desktop"),
+            &compositions,
+            3,
+        );
+        let ids: Vec<&str> = selection
+            .picks
+            .iter()
+            .filter_map(|item| item.get("id").and_then(|id| id.as_str()))
+            .collect();
+
+        assert!(ids.contains(&"desktop-only"));
+        assert!(ids.contains(&"platform-neutral"));
+        assert!(!ids.contains(&"web-only"));
+        assert_eq!(selection.match_.platform.as_deref(), Some("desktop"));
+        assert_eq!(selection.match_.platform_excluded, 1);
     }
 }
