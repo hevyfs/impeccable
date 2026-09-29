@@ -1144,7 +1144,7 @@ pub fn extract_platform(product: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod platform_value_tests {
-    use super::{extract_platform, has_qt_for_python_dependency, has_visual_implementation};
+    use super::{extract_platform, has_qt_for_python_dependency, has_visual_implementation, VISUAL_SCAN_FILE_LIMIT};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
