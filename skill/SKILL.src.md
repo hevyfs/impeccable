@@ -78,7 +78,7 @@ Routing: <!-- rule:skill-routing -->
 - **Otherwise:** treat the request as general design work. Missing PRODUCT.md routes a new surface or replacement world through init, then new-work; a narrow refinement of existing code proceeds on the incumbent implementation as `impeccable context` directs, offering init afterward rather than blocking on it.
 - `teach` aliases `init`. `craft` is a deprecated alias for ordinary new-work and adds nothing. `shape` owns task discovery, then enters new-work only for visual-world and surface-concept decisions.
 
-After init writes PRODUCT.md, resume without rerunning `impeccable context`; init loads the native platform reference itself when the platform it recorded is `ios`, `android`, `adaptive`, or `desktop`.
+After init writes PRODUCT.md, resume without rerunning `impeccable context`; init loads the matching native platform reference when the platform it recorded is `ios`, `android`, `adaptive`, or `desktop`, plus any detected toolkit overlay such as Qt for Python.
 
 **Pin / Unpin:** `{{scripts_path}}/impeccable pin <pin|unpin> <command>` creates or removes a standalone `{{command_prefix}}<command>` shortcut. Report the script's result concisely; relay stderr verbatim on error.
 

@@ -553,14 +553,17 @@ fn write_update_cache(path: &str, cache: &Map<String, Value>) {
 
 // ─── native refs ───────────────────────────────────────────────────────────
 
-fn load_native_platform_references(platform: Option<&str>, provider: &Provider) -> Vec<(String, String)> {
-    let names: Vec<&str> = match platform {
+fn load_native_platform_references(platform: Option<&str>, project_root: &str, provider: &Provider) -> Vec<(String, String)> {
+    let mut names: Vec<&str> = match platform {
         Some("adaptive") => vec!["ios", "android"],
         Some("ios") => vec!["ios"],
         Some("android") => vec!["android"],
-        Some("desktop") => vec!["qt"],
+        Some("desktop") => vec!["desktop"],
         _ => vec![],
     };
+    if platform == Some("desktop") && has_qt_for_python_dependency(project_root) {
+        names.push("qt");
+    }
     names
         .into_iter()
         .filter_map(|n| {
@@ -672,7 +675,7 @@ pub fn run(args: &[String], io: &mut Io) -> i32 {
             "WORLD_DISCOVERY_REQUIRED: PRODUCT.md exists but no DESIGN.md or incumbent visual implementation was found. For a new build or redesign, load reference/new-work.md and establish the visual world with the human or structured simulated user before developing the task concept. Scoped fixes to existing code do not need this flow.".to_string()
         });
     }
-    for (name, content) in load_native_platform_references(ctx.platform.as_deref(), &provider) {
+    for (name, content) in load_native_platform_references(ctx.platform.as_deref(), &ctx.project_root, &provider) {
         parts.push(format!(
             "# NATIVE PLATFORM REFERENCE: {} (reference/{}.md)\n\n{}",
             name.to_uppercase(),
@@ -707,7 +710,7 @@ mod skill_version_tests {
     }
 
     #[test]
-    fn desktop_platform_loads_qt_reference() {
+    fn desktop_platform_loads_generic_and_qt_references_when_qt_is_detected() {
         use crate::provider::Provider;
         use std::fs;
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -723,7 +726,13 @@ mod skill_version_tests {
         ));
         let reference = root.join("reference");
         fs::create_dir_all(&reference).unwrap();
+        fs::write(reference.join("desktop.md"), "# Native desktop platform\nfixture\n").unwrap();
         fs::write(reference.join("qt.md"), "# Qt desktop platform\nfixture\n").unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\ndependencies = [\"PySide6>=6.7\"]\n",
+        )
+        .unwrap();
 
         let provider = Provider {
             id: "source".to_string(),
@@ -732,11 +741,26 @@ mod skill_version_tests {
             skill_dir: Some(root.to_string_lossy().into_owned()),
             self_cmd: "impeccable".to_string(),
         };
-        let loaded = super::load_native_platform_references(Some("desktop"), &provider);
+        let loaded = super::load_native_platform_references(
+            Some("desktop"),
+            root.to_str().unwrap(),
+            &provider,
+        );
 
-        assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].0, "qt");
-        assert!(loaded[0].1.contains("Qt desktop platform"));
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].0, "desktop");
+        assert!(loaded[0].1.contains("Native desktop platform"));
+        assert_eq!(loaded[1].0, "qt");
+        assert!(loaded[1].1.contains("Qt desktop platform"));
+
+        fs::remove_file(root.join("pyproject.toml")).unwrap();
+        let generic_only = super::load_native_platform_references(
+            Some("desktop"),
+            root.to_str().unwrap(),
+            &provider,
+        );
+        assert_eq!(generic_only.len(), 1);
+        assert_eq!(generic_only[0].0, "desktop");
 
         fs::remove_dir_all(root).unwrap();
     }

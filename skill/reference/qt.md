@@ -15,7 +15,7 @@ Use Qt to make a native desktop product, not to host a browser-shaped product.
 - **Use QMainWindow as a desktop workspace when the product has persistent commands or panes.** Put the primary work surface in the central widget; use QMenuBar, QToolBar, QStatusBar, and QDockWidget when the workflow needs those roles rather than rebuilding them from generic frames. <!-- rule:qt-shell-main-window -->
 - **Actions are the command source of truth.** Reuse QAction for menu, toolbar, shortcut, and contextual entry points so enabled/checked/text/icon state does not drift across duplicate controls. <!-- rule:qt-shell-actions -->
 - **Use QSplitter for user-resizable work areas.** Engineering editors, navigators, plots, inspectors, and result panels benefit from direct pane control more than fixed percentage layouts. <!-- rule:qt-shell-splitters -->
-- **Persist workspace state deliberately.** QSettings plus QMainWindow saveGeometry/saveState can restore the user's working arrangement; validate restored geometry against currently available screens so a changed monitor topology cannot strand the window off-screen. <!-- rule:qt-shell-persist-state -->
+- **Persist workspace state deliberately.** QSettings plus QMainWindow saveGeometry/saveState can restore the user's working arrangement. `restoreGeometry()` already handles ordinary off-screen restoration; add manual screen clamping only for a demonstrated edge case, such as application-owned secondary-window coordinates that bypass Qt's normal restoration path. <!-- rule:qt-shell-persist-state -->
 - **Keep native window management unless the product has a real reason not to.** Frameless/custom title bars inherit responsibility for move, resize, snap, system menu, accessibility, focus, maximization, multi-monitor, and platform-specific chrome. Cosmetic novelty alone does not earn that cost. <!-- rule:qt-shell-native-window -->
 
 ## Layout, density & resizing
@@ -36,7 +36,7 @@ Use Qt to make a native desktop product, not to host a browser-shaped product.
 ## Styling & theming
 
 - **QStyle owns standard control behavior and metrics.** Qt's built-in widgets delegate their native look/feel to QStyle. Preserve that machinery even when the visual system is branded. QProxyStyle is the narrow tool for metric/behavior adjustments that genuinely belong at style level. <!-- rule:qt-style-qstyle-first -->
-- **QPalette is semantic color infrastructure.** Start from the current style/application palette and modify roles, not every widget with literal colors. Cover Active, Inactive, and Disabled groups and the roles the product actually uses. <!-- rule:qt-style-palette-roles -->
+- **QPalette is semantic color infrastructure.** Start from the current style/application palette and modify roles, not every widget with literal colors. Cover Active, Inactive, and Disabled groups and the roles the product actually uses. Native styles do not necessarily honor every palette role, so verify the rendered result and use QStyle, scoped QSS, or custom painting only where a role has no effect. <!-- rule:qt-style-palette-roles -->
 - **QSS is a controlled visual layer, not a replacement rendering engine.** Use stylesheets for deliberate brand treatment, but avoid global selectors that erase platform metrics, inaccessible focus indicators, or state-specific behavior. Prefer object names/dynamic properties for scoped variants. <!-- rule:qt-style-qss-scoped -->
 - **Style standard widgets in all states.** Default, hover where meaningful, keyboard focus, pressed, checked/selected, disabled, inactive-window, validation error, and read-only states must remain distinguishable. <!-- rule:qt-style-state-complete -->
 - **Choose native style vs Fusion intentionally.** Native styles maximize OS familiarity; Fusion can provide cross-platform visual consistency. Either choice still owes desktop command, focus, dialog, and window semantics. <!-- rule:qt-style-choice-intentional -->
@@ -115,7 +115,7 @@ Use Qt to make a native desktop product, not to host a browser-shaped product.
 
 ## Qt Widgets vs Qt Quick
 
-Choose by interaction needs, not trend.
+Choose by interaction needs, not trend. This reference is authoritative for Qt Widgets behavior and desktop conventions. Qt Quick shares the desktop principles here, but its Controls, styling, focus, layout, and scene-graph details require Qt Quick-specific guidance rather than treating QWidget rules as literal implementation instructions.
 
 - **Qt Widgets**: default for mature desktop conventions, forms, data tables/trees, MDI-like workspaces, menus/toolbars/docks, engineering and productivity tools.
 - **Qt Quick**: appropriate for scene-oriented, touch-heavy, highly animated, embedded, or custom visual experiences where the declarative item model is the product's natural grammar.

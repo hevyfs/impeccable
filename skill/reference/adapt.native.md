@@ -8,6 +8,14 @@ Adapt an existing **native** design (`ios` / `android` / `adaptive` / `desktop`)
 2. **Target context**: which device/window class, platform/OS, orientation, scaling/DPI range, input methods, and usage posture?
 3. **What breaks**: navigation that does not fit, layouts that stretch instead of restructure, commands that become undiscoverable, gestures/hover/shortcuts that do not exist in the target, or information density that no longer matches the work?
 
+## Mobile-specific adaptation guardrails
+
+- Treat portrait, landscape, split-screen, and multi-window as layout states when the shipped app supports them. Do not assume a single phone aspect ratio.
+- On foldables, respect hinge/occlusion regions and posture changes. Do not place primary controls or reading flow across an unusable fold.
+- Preserve safe-area/system-bar behavior and software-keyboard recovery while restructuring content.
+- iOS to Android and Android to iOS are interaction-model adaptations, not theme swaps. Re-map navigation, back behavior, top/app bars, sheets/dialogs, menus, selection, and standard system actions to the destination OS.
+- `adaptive` means the same product intentionally expresses both mobile platform grammars. It does not mean one lowest-common-denominator UI.
+
 ## Mobile: Phone → Tablet / Large Screen
 
 - **Restructure, don't stretch.** Use size classes (iOS) / window size classes (Android).

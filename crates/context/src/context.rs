@@ -20,11 +20,31 @@ pub const WORKSPACE_DISCOVERY_IGNORED_DIRS: [&str; 12] = [
     "node_modules", ".git", "dist", "build", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", "coverage",
     "vendor", "vendors",
 ];
-const VISUAL_SOURCE_DIRS: [&str; 10] = ["src", "app", "pages", "components", "site", "public", "styles", "ui", "views", "widgets"];
+const VISUAL_SOURCE_DIRS: [&str; 12] = ["src", "app", "pages", "components", "site", "public", "styles", "ui", "views", "widgets", "dialogs", "windows"];
 const STYLE_EXTENSIONS: [&str; 5] = [".css", ".scss", ".sass", ".less", ".styl"];
 const UI_EXTENSIONS: [&str; 10] = [".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte", ".astro", ".py", ".qml", ".ui"];
 const VISUAL_SCAN_FILE_LIMIT: usize = 250;
 const VISUAL_SCAN_DEPTH_LIMIT: usize = 4;
+const QT_FOR_PYTHON_DEPENDENCY_FILES: [&str; 7] = [
+    "pyproject.toml",
+    "requirements.txt",
+    "requirements-lock.txt",
+    "requirements-dev.txt",
+    "Pipfile",
+    "setup.cfg",
+    "setup.py",
+];
+static RE_QT_FOR_PYTHON_DEPENDENCY: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(?:^|[^a-z0-9_.-])(?:pyside6|pyqt6|pyside2|pyqt5)(?:$|[^a-z0-9_.-])").unwrap()
+});
+
+pub fn has_qt_for_python_dependency(project_root: &str) -> bool {
+    QT_FOR_PYTHON_DEPENDENCY_FILES.iter().any(|rel| {
+        safe_read(&jsp::join(&[project_root, rel]))
+            .map(|raw| RE_QT_FOR_PYTHON_DEPENDENCY.is_match(&raw))
+            .unwrap_or(false)
+    })
+}
 
 pub fn all_context_names() -> Vec<&'static str> {
     let mut v: Vec<&str> = PRODUCT_NAMES.to_vec();
@@ -1124,7 +1144,32 @@ pub fn extract_platform(product: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod platform_value_tests {
-    use super::extract_platform;
+    use super::{extract_platform, has_qt_for_python_dependency, has_visual_implementation};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(tag: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "impeccable-{}-{}-{}",
+            tag,
+            std::process::id(),
+            nonce
+        ))
+    }
+
+    fn write_python_ui_case(tag: &str, source: &str) -> bool {
+        let root = temp_root(tag);
+        let src = root.join("src");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("main.py"), source).unwrap();
+        let result = has_visual_implementation(root.to_str().unwrap());
+        fs::remove_dir_all(root).unwrap();
+        result
+    }
 
     #[test]
     fn desktop_is_a_first_class_product_platform() {
@@ -1160,6 +1205,69 @@ mod platform_value_tests {
         assert!(super::has_visual_implementation(root.to_str().unwrap()));
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn alternate_qt_python_imports_are_visual_evidence() {
+        let cases = [
+            ("pyside6-package-import", "from PySide6 import QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.setCentralWidget(QtWidgets.QWidget(self))\n"),
+            ("pyqt6-multi-import", "from PyQt6 import QtCore, QtGui, QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.setWindowTitle(\"Fixture\")\n"),
+            ("pyside2-package-import", "from PySide2 import QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.resize(640, 480)\n"),
+            ("pyqt5-package-import", "from PyQt5 import QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.resize(640, 480)\n"),
+        ];
+        for (tag, source) in cases {
+            assert!(write_python_ui_case(tag, source), "{tag} was not detected");
+        }
+    }
+
+    #[test]
+    fn qtgui_only_is_not_visual_evidence() {
+        let source = "from PySide6.QtGui import QImage, QPainter\n\ndef render_report(path):\n    image = QImage(640, 480, QImage.Format.Format_ARGB32)\n    painter = QPainter(image)\n    painter.drawText(10, 20, path)\n    painter.end()\n    return image\n";
+        assert!(!write_python_ui_case("qtgui-headless", source));
+    }
+
+    #[test]
+    fn qml_and_designer_files_are_visual_evidence() {
+        let qml_root = temp_root("qml-ui");
+        let qml_dir = qml_root.join("ui");
+        fs::create_dir_all(&qml_dir).unwrap();
+        fs::write(qml_dir.join("Main.qml"), "import QtQuick\nimport QtQuick.Controls\nApplicationWindow {\n    visible: true\n    width: 800\n    height: 600\n    title: \"Fixture\"\n    Button { text: \"Run\"; anchors.centerIn: parent }\n}\n").unwrap();
+        assert!(has_visual_implementation(qml_root.to_str().unwrap()));
+        fs::remove_dir_all(qml_root).unwrap();
+
+        let ui_root = temp_root("designer-ui");
+        let ui_dir = ui_root.join("ui");
+        fs::create_dir_all(&ui_dir).unwrap();
+        fs::write(ui_dir.join("main.ui"), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ui version=\"4.0\"><class>MainWindow</class><widget class=\"QMainWindow\" name=\"MainWindow\"/></ui>\n").unwrap();
+        assert!(has_visual_implementation(ui_root.to_str().unwrap()));
+        fs::remove_dir_all(ui_root).unwrap();
+    }
+
+    #[test]
+    fn irrelevant_python_files_do_not_exhaust_visual_scan_budget() {
+        let root = temp_root("python-budget");
+        let src = root.join("src");
+        let widgets = root.join("widgets");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&widgets).unwrap();
+        for i in 0..(VISUAL_SCAN_FILE_LIMIT + 40) {
+            fs::write(src.join(format!("module_{i:03}.py")), "def calculate(value):\n    return value * 2\n").unwrap();
+        }
+        fs::write(widgets.join("main_window.py"), "from PySide6 import QtWidgets\n\nclass MainWindow(QtWidgets.QMainWindow):\n    def __init__(self):\n        super().__init__()\n        self.setCentralWidget(QtWidgets.QWidget(self))\n").unwrap();
+
+        assert!(has_visual_implementation(root.to_str().unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn qt_for_python_dependency_detection_covers_current_and_legacy_bindings() {
+        for dependency in ["PySide6>=6.7", "PyQt6~=6.7", "PySide2==5.15.2", "PyQt5>=5.15"] {
+            let root = temp_root("qt-dependency");
+            fs::create_dir_all(&root).unwrap();
+            fs::write(root.join("pyproject.toml"), format!("[project]\ndependencies = [\"{dependency}\"]\n")).unwrap();
+            assert!(has_qt_for_python_dependency(root.to_str().unwrap()), "{dependency}");
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }
 
 // ─── hasVisualImplementation ───────────────────────────────────────────────
@@ -1174,8 +1282,11 @@ static RE_TOKEN_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?-u:\b)(?:tokens?
 static RE_STYLE_LINK: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)<style(?-u:\b)|<link[^>]+stylesheet").unwrap());
 static RE_CLASS_ATTR: Lazy<Regex> = Lazy::new(|| Regex::new("(?i)class(?:Name)?\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]").unwrap());
 static RE_STYLED: Lazy<Regex> = Lazy::new(|| Regex::new("(?i)class(?:Name)?\\s*=|style\\s*=|styled\\(|css`").unwrap());
+static RE_QT_PYTHON_BINDING_IMPORT: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?m)^\s*(?:from|import)\s+(?:PySide6|PyQt6|PySide2|PyQt5)(?:[.\s]|$)").unwrap()
+});
 static RE_QT_PYTHON_UI: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?m)^\s*(?:from\s+(?:PySide6|PyQt6|PySide2|PyQt5)\.(?:QtWidgets|QtQuick|QtQuickWidgets|QtGui)\s+import|import\s+(?:PySide6|PyQt6|PySide2|PyQt5)(?:\.|\s|$))").unwrap()
+    Regex::new(r"(?m)^\s*(?:from\s+(?:PySide6|PyQt6|PySide2|PyQt5)\.(?:QtWidgets|QtQuick|QtQuickWidgets)\s+import|import\s+(?:PySide6|PyQt6|PySide2|PyQt5)\.(?:QtWidgets|QtQuick|QtQuickWidgets)(?:\s|$)|from\s+(?:PySide6|PyQt6|PySide2|PyQt5)\s+import\s+[^\n#]*(?:\bQtWidgets\b|\bQtQuick\b|\bQtQuickWidgets\b)|from\s+(?:PySide6|PyQt6|PySide2|PyQt5)\.QtGui\s+import\s+[^\n#]*(?:\bQGuiApplication\b|\bQWindow\b))").unwrap()
 });
 static RE_QML_UI: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?m)^\s*import\s+QtQuick(?:\.Controls|\.Layouts)?(?:\s|$)").unwrap());
@@ -1222,12 +1333,28 @@ pub fn has_visual_implementation(project_root: &str) -> bool {
         if RE_MIN.is_match(&base) {
             return false;
         }
+        let prefetched_python = if ext == ".py" {
+            let Some(raw) = safe_read(file_path) else { return false };
+            let body = js_slice_utf16(&raw, 64 * 1024);
+            if !RE_QT_PYTHON_BINDING_IMPORT.is_match(body) {
+                return false;
+            }
+            Some(raw)
+        } else {
+            None
+        };
         let n = *scanned;
         *scanned += 1;
         if n >= VISUAL_SCAN_FILE_LIMIT {
             return false;
         }
-        let Some(raw) = safe_read(file_path) else { return false };
+        let raw = match prefetched_python {
+            Some(raw) => raw,
+            None => {
+                let Some(raw) = safe_read(file_path) else { return false };
+                raw
+            }
+        };
         let body = js_slice_utf16(&raw, 64 * 1024);
         let e1 = RE_BLOCK_COMMENT.replace_all(body, "");
         let e2 = RE_HTML_COMMENT.replace_all(&e1, "");

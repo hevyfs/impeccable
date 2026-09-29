@@ -1,7 +1,7 @@
 //! JS: lib/staleness.mjs (Tier 1)
 
 use crate::artifact_schema::*;
-use crate::context::{BriefSummary, Ctx, TargetCandidate};
+use crate::context::{has_qt_for_python_dependency, BriefSummary, Ctx, TargetCandidate};
 use crate::jsp;
 use crate::util::{exists, js_trim, mtime_ms, read_json, safe_read};
 use once_cell::sync::Lazy;
@@ -57,18 +57,6 @@ const NATIVE_EVIDENCE_DEPENDENCIES: [(&str, &str, &str); 3] = [
     ("expo", "adaptive", "an expo dependency"),
     ("@react-native/metro-config", "adaptive", "a React Native metro config dependency"),
 ];
-const PYTHON_DEPENDENCY_FILES: [&str; 7] = [
-    "pyproject.toml",
-    "requirements.txt",
-    "requirements-lock.txt",
-    "requirements-dev.txt",
-    "Pipfile",
-    "setup.cfg",
-    "setup.py",
-];
-static RE_QT_FOR_PYTHON_DEP: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)(?:^|[^a-z0-9_.-])(?:pyside6|pyqt6|pyside2|pyqt5)(?:$|[^a-z0-9_.-])").unwrap()
-});
 
 /// JS: designSidecarCandidatesFor(projectRoot, contextDir)
 pub fn design_sidecar_candidates_for(project_root: &str, context_dir: Option<&str>) -> Vec<String> {
@@ -194,11 +182,7 @@ pub fn check_native_platform_evidence(
             }
         }
     }
-    let has_qt_for_python = PYTHON_DEPENDENCY_FILES.iter().any(|rel| {
-        safe_read(&jsp::join(&[project_root, rel]))
-            .map(|raw| RE_QT_FOR_PYTHON_DEP.is_match(&raw))
-            .unwrap_or(false)
-    });
+    let has_qt_for_python = has_qt_for_python_dependency(project_root);
     if has_qt_for_python {
         evidence.push(NativeEvidence {
             platform: "desktop",
@@ -595,6 +579,39 @@ mod qt_desktop_evidence_tests {
         assert_eq!(findings.len(), 1);
         assert!(findings[0].summary.contains("PySide/PyQt Qt for Python dependency"));
         assert!(findings[0].fix.contains("`desktop`"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mixed_mobile_and_desktop_evidence_does_not_collapse_to_adaptive() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "impeccable-mixed-native-evidence-{}-{}",
+            std::process::id(),
+            nonce
+        ));
+        fs::create_dir_all(root.join("android")).unwrap();
+        fs::write(root.join("android/build.gradle"), "plugins {}\n").unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[project]\ndependencies = [\"PyQt6>=6.7\"]\n",
+        )
+        .unwrap();
+
+        let findings = check_native_platform_evidence(
+            root.to_str().unwrap(),
+            None,
+            Some("# Product\n\n## Positioning\nFixture\n"),
+            Some("PRODUCT.md"),
+        );
+
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].fix.contains("both desktop Qt and mobile native evidence"));
+        assert!(!findings[0].fix.contains("should be `adaptive`"));
 
         fs::remove_dir_all(root).unwrap();
     }

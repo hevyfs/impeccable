@@ -4,6 +4,12 @@ This is a code-level audit, not a design critique. Audit from source. Mobile nat
 
 ## Diagnostic Scan
 
+### Platform-specific coverage
+
+For **iOS / Android / adaptive mobile**, explicitly check portrait and landscape where supported; compact and expanded widths; split-screen/multi-window; safe areas and system bars; software keyboard behavior; Dynamic Type/font scaling; foldables/hinges where the shipped device class can encounter them; and platform transitions such as iOS navigation bars/sheets versus Android app bars/back behavior. An adaptive app must preserve the product while respecting each OS interaction model rather than flattening both into one visual grammar.
+
+For **desktop**, explicitly check keyboard and mouse operation; minimum, normal, and large windows; maximized/restored state; system scaling and mixed-DPI monitors; inactive windows; menus, shortcuts, dialogs, file/clipboard/drag-and-drop behavior; and platform-specific window conventions. For Qt for Python, apply the additional checks from `qt.md`.
+
 Run comprehensive checks across 5 dimensions. Score each dimension 0-4 using the criteria below. Apply only the checks relevant to the declared platform; do not penalize a desktop app for lacking mobile gestures or a mobile app for lacking desktop menus.
 
 ### 1. Accessibility & Input
