@@ -214,7 +214,7 @@ jobs:
       - name: Exercise Windows launcher downloads and verification
         run: node --test tests/launcher-download.test.mjs
 
-  # Additive local validation gate for repositories that attach a self-hosted
+  # Additive local validation gate for repositories with an attached self-hosted
   # runner. Hosted Linux/Windows jobs remain intact; this gives PRs a bounded
   # source-built validation path on the maintainer's local runner.
   self-hosted-pr-validation:
