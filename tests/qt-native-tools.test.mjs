@@ -57,11 +57,15 @@ test('Qt native scanner and capture helper regression suite', async () => {
   const count = output.match(/\bRan\s+(\d+)\s+tests?\s+in\b/);
   assert.ok(count, `Missing Python unittest test-count summary:\n${output}`);
   assert.ok(
-    Number(count[1]) >= 25,
-    `Expected at least 25 Qt regression tests, found ${count[1]}:\n${output}`,
+    Number(count[1]) >= 29,
+    `Expected at least 29 Qt regression tests, found ${count[1]}:\n${output}`,
   );
   for (const name of [
     'test_python_literals_comments_and_docstrings_are_not_calls',
+    'test_utf8_bom_is_valid_python_source',
+    'test_pep263_latin1_is_decoded_like_python',
+    'test_bad_encoding_is_a_read_error_not_ast_syntax_hint',
+    'test_unknown_pep263_encoding_reports_decode_failure',
     'test_blocking_sleep_in_ui_handlers_only',
     'test_cell_widget_loop_is_advisory_not_single_widget',
     'test_model_reset_protocol_hint_and_safe_pair',
