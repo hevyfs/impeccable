@@ -418,6 +418,25 @@ describe('skill scripts payload', () => {
     expect([...names].filter((n) => n.startsWith('bin/'))).toEqual([]);
   });
 
+  test('preserves LF POSIX launcher shebang in output from a Windows CRLF source', () => {
+    const outputDir = fs.mkdtempSync(path.join(ROOT_DIR, 'test-tmp-launcher-lf-'));
+    try {
+      const skill = {
+        ...skills[0],
+        scripts: scripts.map((script) => script.name === 'impeccable'
+          ? { ...script, content: script.content.replace(/\r?\n/g, '\r\n') }
+          : script),
+      };
+      transformers.transformClaudeCode([skill], outputDir, utils.readPatterns(ROOT_DIR));
+      const file = path.join(outputDir, 'claude-code/.claude/skills/impeccable/scripts/impeccable');
+      const emitted = fs.readFileSync(file, 'utf8');
+      expect(emitted.startsWith('#!/bin/sh\n')).toBe(true);
+      expect(emitted).not.toContain('\r\n');
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   test('the launcher is executable and VERSION matches ENGINE_VERSION', () => {
     const launcher = scripts.find((s) => s.name === 'impeccable');
     if (process.platform === 'win32') {
