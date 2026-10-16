@@ -14,6 +14,8 @@ On Windows, use `py -3` instead of `python` if that is the available Python laun
 
 For visual evidence, prefer a screenshot of the **actual application under its Qt test harness**. [qt.md](qt.md) documents the importable `{{scripts_path}}/qt_capture.py` helper. The test fixture must provide a real QWidget, representative project data, settled GUI events and supported window sizes. Its PNG/JSON artifacts document requested and actual logical size, Qt binding/version, OS, DPR, theme and scenario. A manifest with `verification_level=simulated-capture` or `qt_binding=unavailable` is unit-test evidence only, never proof of desktop appearance. A `native-raster-observation` does not validate keyboard operation. Do not claim to have verified Windows rendering if only offscreen/Linux/test-double captures were made.
 
+For Qt Widgets in Python, also read [qt-python-review.md](qt-python-review.md) before classifying any findings. Review model mutation contracts, Qt object lifetime, queued worker signals, responsiveness, QSS/widget accessibility, locale/units and real pyqtgraph repaint behavior; these cannot be established by the small static scanner alone. The PySide6/PyQt6 overlay takes precedence over C++ and Qt Quick examples.
+
 ## Diagnostic Scan
 
 ### Platform-specific coverage
