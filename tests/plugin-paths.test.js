@@ -242,7 +242,17 @@ describe('rewritePluginMarkdownTree', () => {
     for (const isSkillEntrypoint of [true, false]) {
       const command = rewritePluginMarkdown('node .claude/skills/impeccable/scripts/probe.mjs resolved', { isSkillEntrypoint })
         .replaceAll(isSkillEntrypoint ? '${CLAUDE_SKILL_DIR}' : '<skill-base-dir>', skillDir);
-      expect(execFileSync('sh', ['-c', command], { env, encoding: 'utf8' }).trim()).toBe('resolved');
+      if (process.platform === 'win32') {
+        // POSIX sh is not a Windows runtime requirement. Still verify that
+        // the resolved, quoted command targets the cache directory with
+        // spaces, and that Node can execute the real target from that path.
+        expect(command).toContain(`"${skillDir}/scripts/probe.mjs"`);
+        expect(execFileSync(process.execPath, [
+          path.join(skillDir, 'scripts/probe.mjs'), 'resolved',
+        ], { env, encoding: 'utf8' }).trim()).toBe('resolved');
+      } else {
+        expect(execFileSync('sh', ['-c', command], { env, encoding: 'utf8' }).trim()).toBe('resolved');
+      }
     }
   });
 
