@@ -36,6 +36,8 @@ Adapt an existing **native** design (`ios` / `android` / `adaptive` / `desktop`)
 
 When Qt for Python evidence is present, apply `qt.md`: use layouts/`QSizePolicy`, `QSplitter`, `QMainWindow` state, `QStyle`/`QPalette`, `QKeySequence.StandardKey`, native dialogs, DPR-aware assets, and the project's QTest/pytest-qt harness where applicable.
 
+For Qt for Python, capture **before and after** native views of the actual application at a comparable representative state using the importable `.cursor/skills/impeccable/scripts/qt_capture.py` helper described in [qt.md](qt.md). Record the desktop OS, Qt version, logical window dimensions, device pixel ratio, theme and the scenario tested. The helper fails when Qt constrains a requested size instead of producing misleading metadata; choose a supported size and rerun rather than treating the failed case as a pass. Existing `QTest`/`pytest-qt` tests should verify keyboard focus, navigation, resizing and state separately. A headless image or simulated widget capture is not proof of Windows-native rendering.
+
 ## Platform → Platform
 
 Translate idioms; never transplant them.

@@ -2,6 +2,20 @@ Run systematic **technical** quality checks on a native app (`ios` / `android` /
 
 This is a code-level audit, not a design critique. Audit from source. Mobile native may be SwiftUI / UIKit / Compose / React Native / Flutter; desktop native may use Qt, WPF/WinUI, Avalonia, GTK, AppKit, JavaFX, wxWidgets, or another desktop toolkit. No browser tooling or `impeccable detect` applies. Score against the platform reference(s): [ios.md](ios.md), [android.md](android.md), both for `adaptive`, or [desktop.md](desktop.md) for `desktop`. Apply [qt.md](qt.md) only when Qt for Python evidence is present. Read the applicable baseline and any loaded toolkit overlay before scoring if Setup has not already injected them. The report skeleton mirrors [audit.md](audit.md); keep the two in sync when changing shared reporting structure.
 
+## Qt for Python source evidence (desktop overlay only)
+
+When the target app uses PySide6/PyQt6, load [qt.md](qt.md) and first run the bundled **optional, standard-library** source scanner from the *target project* directory:
+
+```bash
+python ".claude/skills/impeccable/scripts/qt_audit.py" . --json
+```
+
+On Windows, use `py -3` instead of `python` if that is the available Python launcher. This scanner reads `.py`, `.qss`, `.qml` and `.ui` files; `.ui` files are inventoried, not linted. Python tokenization avoids reporting code embedded in strings or comments; QSS `QT201` and QML `QT301` are conservative advisory hints, not errors in the running interface. Its `--strict` option exits 2 on warnings but should not become the default audit gate. Report the returned file/line/rule and limitations; manually inspect each warning, explicitly reject legitimate fixed-size domain primitives, and never use scanner output alone to assign an accessibility or design score.
+
+For visual evidence, prefer a screenshot of the **actual application under its Qt test harness**. [qt.md](qt.md) documents the importable `.claude/skills/impeccable/scripts/qt_capture.py` helper. The test fixture must provide a real QWidget, representative project data, settled GUI events and supported window sizes. Its PNG/JSON artifacts document requested and actual logical size, Qt binding/version, OS, DPR, theme and scenario. A manifest with `verification_level=simulated-capture` or `qt_binding=unavailable` is unit-test evidence only, never proof of desktop appearance. A `native-raster-observation` does not validate keyboard operation. Do not claim to have verified Windows rendering if only offscreen/Linux/test-double captures were made.
+
+For Qt Widgets in Python, also read [qt-python-review.md](qt-python-review.md) before classifying any findings. Review model mutation contracts, Qt object lifetime, queued worker signals, responsiveness, QSS/widget accessibility, locale/units and real pyqtgraph repaint behavior; these cannot be established by the small static scanner alone. The PySide6/PyQt6 overlay takes precedence over C++ and Qt Quick examples.
+
 ## Diagnostic Scan
 
 ### Platform-specific coverage
