@@ -184,7 +184,26 @@ function execBash(workspace, command, timeoutMs = 20_000, extraEnv = {}) {
     // Real decision pages have browser E2E; this suite has a structured user.
     const shellEnv = Object.fromEntries(Object.entries({ ...process.env, ...extraEnv })
       .filter(([name]) => !/(?:^|_)(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN)$/.test(name)));
-    const proc = spawn('bash', ['-lc', command], {
+    // Windows has multiple "bash.exe" implementations (WSL and Git Bash).
+    // WSL discards Windows environment variables and cannot execute the
+    // Windows engine binary. Select Git for Windows explicitly, and avoid a
+    // login shell that may reset the controlled test environment.
+    const gitBash = process.platform === 'win32'
+      ? [process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
+          .filter(Boolean)
+          .map((root) => path.join(root, 'Git', 'bin', 'bash.exe'))
+          .find((candidate) => fs.existsSync(candidate))
+      : null;
+    const shell = process.platform === 'win32' ? gitBash : 'bash';
+    if (!shell) {
+      resolve({
+        exitCode: null, stdout: '',
+        stderr: 'Git Bash is required for this test on Windows',
+        truncated: false,
+      });
+      return;
+    }
+    const proc = spawn(shell, [process.platform === 'win32' ? '-c' : '-lc', command], {
       cwd: workspace,
       env: { ...shellEnv, ...(ENGINE_BIN ? { IMPECCABLE_BIN: ENGINE_BIN } : {}), IMPECCABLE_QUESTION_DISABLED: '1' },
     });

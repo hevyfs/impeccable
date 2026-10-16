@@ -50,7 +50,27 @@ No-index visual harnesses and internal inspectors live under `/labs/<subject>`. 
 
 ### Prerequisites
 - Bun (fast JavaScript runtime and package manager)
-- No external dependencies required
+- **Python 3.11+ to run the default/core test suite**. The Qt scanner and
+  screenshot helper regression tests use only the Python standard library.
+  Python is a *development/test* dependency, **not** an Impeccable CLI runtime
+  dependency and is not needed to build/distribute the core skill.
+- To select a different installed Python executable, set
+  `IMPECCABLE_PYTHON` to its path before running `bun run test:core`.
+- **GitHub-hosted Node CI** provisions Python **3.12** through
+  `actions/setup-python`. On the **self-hosted Windows service runner**,
+  Python **3.11+ must be preinstalled** and accessible to the runner account.
+  The workflow discovers `py -3.12`, `py -3` or `python`, validates its
+  version, and exports its absolute executable path as `IMPECCABLE_PYTHON`.
+  It fails within two minutes if none is suitable; it does **not** run a
+  Python installer or modify system-wide registry entries on that runner.
+  Python updates and service-account permissions are runner maintenance.
+- The Windows-only *real QWidget offscreen smoke* creates a local virtualenv
+  with the same validated Python interpreter and installs
+  **PySide6_Essentials==6.8.3** (pinned Qt test baseline). Contributors do
+  not need PySide6 to run `bun run test`; no Python packages are required
+  for the standard-library Qt source regression tests.
+- The Windows smoke does not certify native themes or mixed-DPI graphics.
+  Validate those on a genuine interactive Windows desktop separately.
 
 ### Commands
 
@@ -138,7 +158,8 @@ scripts/
 ## Testing
 
 ```bash
-bun run test                  # Default suite — unit + static fixtures (no API keys needed)
+bun run test                  # Default suite — requires Python 3.11+ for Qt source tests (no API keys)
+bun run test:core             # Core tests, including Qt source/capture regressions; Python stdlib only
 bun run test:live-e2e         # Opt-in — full-cycle live-mode E2E across framework fixtures (~2 min, needs `npx playwright install chromium` once)
 bun run test:skill-behavior   # Opt-in — LLM-backed checks that the SKILL.md Setup flow actually drives the agent (~5 min, costs cents, needs `.env`)
 ```

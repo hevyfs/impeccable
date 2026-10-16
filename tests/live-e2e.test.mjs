@@ -71,6 +71,7 @@ import {
 } from './live-e2e/ui.mjs';
 import { runSteerSmoke } from './live-e2e/steer.mjs';
 import { runPreActions, waitForCyclingRobust } from './live-e2e/preactions.mjs';
+import { isStaleAstroCssHmrError, assertAstroRecoveredStyles } from './live-e2e/astro-hmr-console.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -151,6 +152,7 @@ const LIVE_TREE_URL_RE = /\.impeccable-live|impeccable\/live\/preview/i;
 
 // The two framework dev-mode notices every React fixture emits.
 const FRAMEWORK_NOISE_RE = /Download the React DevTools|StrictMode/i;
+
 
 // Chromium's resource-failure console line. Only the favicon flavour is
 // allowlisted; a favicon is not part of any fixture and its absence proves
@@ -719,9 +721,58 @@ for (const { name, fixture } of fixtures) {
           }`,
         );
 
-        // 10. Console hygiene — no errors during the whole flow.
+        // 10. Console hygiene — no errors during the whole flow. Astro is
+        // exceptional only for stale temporary CSS HMR URLs left by cleanup;
+        // require clean final reload + DOM to prove those were transient.
         if (fixture.runtime.probe?.expectConsoleClean) {
-          const realErrors = consoleErrors.filter((e) => !isBenignConsoleError(e));
+          const staleAstroErrors = name === 'astro-vite7'
+            ? consoleErrors.filter(isStaleAstroCssHmrError)
+            : [];
+          if (staleAstroErrors.length > 0) {
+            const priorCount = consoleErrors.length;
+            t.diagnostic(
+              `Astro stale style HMR during carbonize: ${staleAstroErrors.length} console entries. Verifying recovered page on a clean reload.`,
+            );
+            await page.reload({ waitUntil: 'load' });
+            await waitForAcceptedDom(page, domSelector, {
+              allowVariantRoot: sourceShadow, timeout: 20_000,
+            });
+            // A clean page/DOM can still have missing CSS after an HMR 500.
+            // Independently require a known original Astro stylesheet rule
+            // and its browser-computed effect on unaffected fixture elements.
+            const astroCssWitness = await page.evaluate(() => {
+              const hook = document.querySelector('.hero-hook');
+              const container = document.querySelector('main.page');
+              let rulePresent = false;
+              for (const sheet of document.styleSheets) {
+                try {
+                  for (const rule of sheet.cssRules) {
+                    if (rule.cssText.includes('.hero-hook') && rule.cssText.includes('color')) {
+                      rulePresent = true;
+                      break;
+                    }
+                  }
+                } catch {
+                  // Cross-origin or inaccessible stylesheets cannot count as proof.
+                }
+                if (rulePresent) break;
+              }
+              return {
+                rulePresent,
+                hookColor: hook ? getComputedStyle(hook).color : null,
+                pagePaddingLeft: container ? getComputedStyle(container).paddingLeft : null,
+              };
+            });
+            assertAstroRecoveredStyles(astroCssWitness);
+            const reloadErrors = consoleErrors.slice(priorCount).filter((e) => !isBenignConsoleError(e));
+            assert.deepEqual(
+              reloadErrors, [],
+              `Astro final reload still has console errors:\n${reloadErrors.join('\n')}`,
+            );
+          }
+          const realErrors = consoleErrors.filter((e) =>
+            !isBenignConsoleError(e)
+            && !(name === 'astro-vite7' && isStaleAstroCssHmrError(e)));
           if (realErrors.length > 0) {
             t.diagnostic('--- console errors ---');
             for (const e of realErrors) t.diagnostic(e);

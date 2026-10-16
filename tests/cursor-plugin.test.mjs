@@ -30,6 +30,12 @@ describe('Cursor native plugin', () => {
     write('dist/cursor/.cursor/skills/impeccable/reference/polish.md', sample);
     write('dist/cursor/.cursor/skills/impeccable/scripts/impeccable', '#!/bin/sh\nprintf "%s\\n" "$PWD" "$1"\ncat\nexit 2\n');
     fs.chmodSync(path.join(root, 'dist/cursor/.cursor/skills/impeccable/scripts/impeccable'), 0o755);
+    // The real Cursor distribution ships both POSIX and Windows launchers.
+    // Include the Windows entrypoint in this synthetic provider fixture so
+    // its staging/preservation assertion tests a real input rather than
+    // expecting stageCursorPlugin to invent a missing file.
+    write('dist/cursor/.cursor/skills/impeccable/scripts/impeccable.cmd',
+      '@echo off\r\nexit /b 0\r\n');
     write('dist/cursor/.cursor/agents/impeccable-asset-producer.md', sample);
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -48,7 +54,15 @@ describe('Cursor native plugin', () => {
       assert.match(text, /"<skill-base-dir>\/scripts\/impeccable\.cmd" context/);
     }
     assert.match(fs.readFileSync(path.join(output, 'agents/impeccable-asset-producer.md'), 'utf8'), /supplied in the handoff/);
-    assert.equal(fs.statSync(path.join(output, 'skills/impeccable/scripts/impeccable')).mode & 0o111, 0o111);
+    const launcherPath = path.join(output, 'skills/impeccable/scripts/impeccable');
+    if (process.platform === 'win32') {
+      // Git/NTFS does not reliably report POSIX executable bits. Confirm
+      // the portable shell launcher and Windows CMD launcher both ship.
+      assert.match(fs.readFileSync(launcherPath, 'utf8'), /^#!\/bin\/sh\r?\n/);
+      assert.ok(fs.existsSync(path.join(output, 'skills/impeccable/scripts/impeccable.cmd')));
+    } else {
+      assert.equal(fs.statSync(launcherPath).mode & 0o111, 0o111);
+    }
     assert.equal(fs.readFileSync(path.join(root, 'dist/cursor/.cursor/skills/impeccable/SKILL.md'), 'utf8'), sample);
     write('dist/cursor-plugin/stale.txt', 'stale');
     stageCursorPlugin(root, path.join(root, 'dist'));
@@ -85,9 +99,10 @@ describe('Cursor native plugin', () => {
     const marketplace = JSON.parse(fs.readFileSync(path.join(repository, '.cursor-plugin/marketplace.json')));
     assert.equal(marketplace.plugins[0].source, './cursor-plugin');
     const workflow = fs.readFileSync(path.join(repository, '.github/workflows/sync-generated-output.yml'), 'utf8');
-    assert.match(workflow, /\n    cursor-plugin\n/);
+    assert.match(workflow, /\r?\n    cursor-plugin\r?\n/);
     assert.match(workflow, /docs\/CURSOR-PLUGIN\.md/);
-    const pushPaths = workflow.split('    paths:\n')[1]?.split('  workflow_dispatch:')[0];
+    const pushPaths = workflow.replace(/\r\n/g, '\n')
+      .split('    paths:\n')[1]?.split('  workflow_dispatch:')[0];
     assert.match(pushPaths ?? '', /^      - "LICENSE"$/m);
   });
 

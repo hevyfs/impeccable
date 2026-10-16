@@ -74,6 +74,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Setup Python for mandatory Qt source tests
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: '3.12'
+
       - name: Setup Bun
         if: runner.os != 'Windows'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -86,12 +91,28 @@ jobs:
         run: |
           $version = (Get-Content .bun-version).Trim()
           npm install -g "bun@$version"
+          if ($LASTEXITCODE -ne 0) { throw "Bun installation failed" }
+          # npm installs bun.cmd on Windows; Node child_process.spawn('bun')
+          # needs the actual bun.exe directory on PATH (not only the shim).
+          $npmRoot = ((& npm root -g) | Select-Object -Last 1).Trim()
+          $bunPackage = Join-Path $npmRoot "bun"
+          $bunExecutable = Get-ChildItem -Path $bunPackage -Filter "bun.exe" -File -Recurse |
+            Select-Object -First 1
+          if (-not $bunExecutable) { throw "Native bun.exe was not found under $bunPackage" }
+          $binDir = $bunExecutable.DirectoryName
+          $env:PATH = "$binDir$([IO.Path]::PathSeparator)$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
           bun --version
+          if ($LASTEXITCODE -ne 0) { throw "Native Bun validation failed" }
+          node -e 'const p=require("node:child_process").spawnSync("bun",["--version"],{encoding:"utf8"}); if(p.error||p.status!==0){console.error(p.error||p.stderr);process.exit(1)};console.log(p.stdout.trim())'
+          if ($LASTEXITCODE -ne 0) { throw "Node could not spawn native Bun" }
 
       - name: Install dependencies
         run: bun install
 
       - name: Run core tests
+        env:
+          IMPECCABLE_PYTHON: python
         run: bun run test:core
 
       - name: Install Puppeteer browser
@@ -199,7 +220,10 @@ jobs:
   rust-windows:
     runs-on: windows-latest
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # Required on core/Qt PRs too: this hosted Windows gate owns the full
+    # Rust browser integration suite that the service runner cannot execute
+    # reliably, as well as all workspace/unit coverage.
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.core == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -207,7 +231,11 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo build --workspace --all-targets
-      - run: cargo test --workspace --no-fail-fast
+      # Browser-backed Rust tests can launch multiple Chromium instances at
+      # once on Windows; serialize within each test binary to avoid loopback
+      # socket resets and resource-settling timeouts under parallel load.
+      # No test is skipped and all assertions remain enabled.
+      - run: cargo test --workspace --no-fail-fast -- --test-threads=1
 
   launcher-windows:
     runs-on: windows-latest
@@ -239,6 +267,54 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Python for mandatory Qt source tests
+        if: runner.os != 'Windows'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: '3.12'
+
+      # The Windows runner is a non-elevated service: setup-python can attempt
+      # an MSI registry installation and stall until the whole job times out.
+      # Python must already be installed for the service account. Resolve the
+      # real executable once and use it for both the unittest gate and Qt smoke.
+      - name: Resolve preinstalled Python on self-hosted Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            @{ exe = 'py'; arguments = @('-3.12') },
+            @{ exe = 'py'; arguments = @('-3') },
+            @{ exe = 'python'; arguments = @() }
+          )
+          $python = $null
+          foreach ($candidate in $candidates) {
+            $command = $candidate.exe
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { continue }
+            $selector = @($candidate.arguments)
+            try {
+              $output = & $command @selector -c 'import sys; print(sys.executable); sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>$null
+              if ($LASTEXITCODE -ne 0) { continue }
+              $path = [string]($output | Select-Object -Last 1)
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+              & $path -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
+              if ($LASTEXITCODE -ne 0) { continue }
+              $python = (Resolve-Path -LiteralPath $path).ProviderPath
+              break
+            } catch {
+              # Try the next installed interpreter without provisioning packages.
+              continue
+            }
+          }
+          if (-not $python) {
+            throw 'Python 3.11+ must be preinstalled and accessible to the self-hosted Windows runner service account (py -3.12, py -3 or python). No installer runs in this job.'
+          }
+          "IMPECCABLE_PYTHON=$python" >> $env:GITHUB_ENV
+          & $python --version
+          if ($LASTEXITCODE -ne 0) { throw 'Resolved Python is not executable' }
+          Write-Host "Validated preinstalled Python at: $python"
+
       - name: Setup Bun
         if: runner.os != 'Windows'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -251,18 +327,66 @@ jobs:
         run: |
           $version = (Get-Content .bun-version).Trim()
           npm install -g "bun@$version"
+          if ($LASTEXITCODE -ne 0) { throw "Bun installation failed" }
+          # npm installs bun.cmd on Windows; Node child_process.spawn('bun')
+          # needs the actual bun.exe directory on PATH (not only the shim).
+          $npmRoot = ((& npm root -g) | Select-Object -Last 1).Trim()
+          $bunPackage = Join-Path $npmRoot "bun"
+          $bunExecutable = Get-ChildItem -Path $bunPackage -Filter "bun.exe" -File -Recurse |
+            Select-Object -First 1
+          if (-not $bunExecutable) { throw "Native bun.exe was not found under $bunPackage" }
+          $binDir = $bunExecutable.DirectoryName
+          $env:PATH = "$binDir$([IO.Path]::PathSeparator)$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
           bun --version
+          if ($LASTEXITCODE -ne 0) { throw "Native Bun validation failed" }
+          node -e 'const p=require("node:child_process").spawnSync("bun",["--version"],{encoding:"utf8"}); if(p.error||p.status!==0){console.error(p.error||p.stderr);process.exit(1)};console.log(p.stdout.trim())'
+          if ($LASTEXITCODE -ne 0) { throw "Node could not spawn native Bun" }
 
       - name: Install dependencies
         run: bun install
+
+      # Run the feature-specific Qt smoke before the long Rust workspace gate.
+      # A Rust/browser failure must not hide native QWidget capture evidence.
+      - name: Run PySide6 QWidget integration smoke on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        env:
+          # A service-runner can capture real Qt widgets without an interactive desktop.
+          # This is NOT a compositor, native-theme or mixed-DPI acceptance test.
+          QT_QPA_PLATFORM: offscreen
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Use the same validated preinstalled interpreter as the core tests.
+          if (-not $env:IMPECCABLE_PYTHON) { throw 'Validated Python interpreter missing' }
+          & $env:IMPECCABLE_PYTHON -m venv .qt-native-venv
+          if ($LASTEXITCODE -ne 0) { throw "Python 3 virtual environment setup failed" }
+          $python = Join-Path $PWD ".qt-native-venv/Scripts/python.exe"
+          & $python -m pip install --disable-pip-version-check --only-binary=:all: "PySide6_Essentials==6.8.3"
+          if ($LASTEXITCODE -ne 0) { throw "PySide6 Essentials installation failed" }
+          & $python tests/qt-native-tools/native_widget_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "Qt Widgets integration smoke failed" }
 
       - name: Install the pinned Rust toolchain
         run: rustup show
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Test Rust workspace
+      - name: Test Rust workspace (non-Windows, full suite)
+        if: runner.os != 'Windows'
         run: cargo test --workspace --no-fail-fast
+
+      # The same HEAD is tested with the full Windows integration suite by
+      # rust-windows (GitHub-hosted), including browser-backed CLI captures.
+      # Chromium readiness on this unelevated Windows service is unreliable
+      # even with serialized tests; repeating those integrations here does not
+      # add a reliable merge gate. Keep all Rust lib/bin unit coverage and the
+      # source-built release engine on the self-hosted runner.
+      - name: Test Rust lib/bin targets (self-hosted Windows)
+        if: runner.os == 'Windows'
+        run: cargo test --workspace --lib --bins --no-fail-fast -- --test-threads=1
 
       - name: Build release engine
         run: cargo build --release -p impeccable
@@ -270,10 +394,24 @@ jobs:
       - name: Validate generated distribution
         run: bun run build
 
-      - name: Run source-built test suite
+      # The Windows service lacks POSIX symlinks for oracle fixtures and has
+      # intermittently hung on live-mode browser/server tests (detached child
+      # processes remain alive even after assertions fail). All strict oracle,
+      # live and framework suites are instead exercised against the exact PR's
+      # source-built engine in the mandatory hosted Linux `oracle` job. Keep
+      # this local runner's build, Qt smoke, core, detector and plugin tests.
+      - name: Run source-built suites (Windows service)
+        if: runner.os == 'Windows'
         env:
-          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable${{ runner.os == 'Windows' && '.exe' || '' }}
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable.exe
+        run: node scripts/run-tests.mjs core detector plugin-e2e
+
+      - name: Run source-built test suite (non-Windows, including oracle)
+        if: runner.os != 'Windows'
+        env:
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
         run: bun run test
+
 
   # Behavior gate: replays the tests/oracle/ goldens against a release build
   # of the engine from THIS checkout (so a PR is judged on its own source,
@@ -283,7 +421,7 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.oracle == 'true' || needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.oracle == 'true' || needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -313,6 +451,14 @@ jobs:
         env:
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
         run: node tests/oracle/run.mjs
+
+      # Source-built live/framework regression suites are retained as required
+      # coverage on a hosted POSIX runner, not silently skipped because the
+      # non-elevated Windows service cannot reliably own their server trees.
+      - name: Run source-built live and framework suites
+        env:
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
+        run: node scripts/run-tests.mjs live framework
 
   # Release-order guard (triage decision D4). Verifies that the engine release for
   # the pinned ENGINE_VERSION is fully published — the five dist binaries + .sha256

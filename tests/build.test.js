@@ -418,9 +418,36 @@ describe('skill scripts payload', () => {
     expect([...names].filter((n) => n.startsWith('bin/'))).toEqual([]);
   });
 
+  test('preserves LF POSIX launcher shebang in output from a Windows CRLF source', () => {
+    const outputDir = fs.mkdtempSync(path.join(ROOT_DIR, 'test-tmp-launcher-lf-'));
+    try {
+      const skill = {
+        ...skills[0],
+        scripts: scripts.map((script) => script.name === 'impeccable'
+          ? { ...script, content: script.content.replace(/\r?\n/g, '\r\n') }
+          : script),
+      };
+      transformers.transformClaudeCode([skill], outputDir, utils.readPatterns(ROOT_DIR));
+      const file = path.join(outputDir, 'claude-code/.claude/skills/impeccable/scripts/impeccable');
+      const emitted = fs.readFileSync(file, 'utf8');
+      expect(emitted.startsWith('#!/bin/sh\n')).toBe(true);
+      expect(emitted).not.toContain('\r\n');
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   test('the launcher is executable and VERSION matches ENGINE_VERSION', () => {
     const launcher = scripts.find((s) => s.name === 'impeccable');
-    expect(launcher.mode & 0o111).not.toBe(0);
+    if (process.platform === 'win32') {
+      // Windows does not expose POSIX executable bits for Git checkouts.
+      // The native launcher is impeccable.cmd; the POSIX shim is also
+      // distributed as a file with a valid shell shebang.
+      expect(scripts.some((script) => script.name === 'impeccable.cmd')).toBe(true);
+      expect(launcher.content.startsWith('#!')).toBe(true);
+    } else {
+      expect(launcher.mode & 0o111).not.toBe(0);
+    }
     const version = scripts.find((s) => s.name === 'VERSION');
     expect(version.content.trim()).toBe(fs.readFileSync(path.join(ROOT_DIR, 'ENGINE_VERSION'), 'utf-8').trim());
   });
