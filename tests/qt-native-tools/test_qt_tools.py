@@ -51,6 +51,52 @@ class StaticAuditTests(unittest.TestCase):
             self.assertEqual(report["findings"][1]["line"], 1)
             self.assertTrue(all(f["severity"] == "advisory" for f in report["findings"]))
 
+    def test_utf8_bom_is_valid_python_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "bom.py").write_bytes(
+                b"\\xef\\xbb\\xbfw.setGeometry(0, 0, 800, 600)\\n"
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual(
+                [(item["rule"], item["line"]) for item in findings],
+                [("QT101", 1)],
+            )
+
+    def test_pep263_latin1_is_decoded_like_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "legacy.py").write_bytes(
+                b"# coding: latin-1\\n"
+                b"label = 'caf\\xe9'\\n"
+                b"widget.setFixedHeight(200)\\n"
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual(
+                [(item["rule"], item["line"]) for item in findings],
+                [("QT102", 3)],
+            )
+
+    def test_bad_encoding_is_a_read_error_not_ast_syntax_hint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "bad_bytes.py").write_bytes(
+                b"# coding: utf-8\\nlabel = '\\xff'\\n"
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual([item["rule"] for item in findings], ["QT000"])
+            self.assertEqual(findings[0]["severity"], "error")
+
+    def test_unknown_pep263_encoding_reports_decode_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unknown.py").write_bytes(
+                b"# coding: made-up-charset\\nx = 1\\n"
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual([item["rule"] for item in findings], ["QT000"])
+            self.assertEqual(findings[0]["severity"], "error")
+
     def test_python_literals_comments_and_docstrings_are_not_calls(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
