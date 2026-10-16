@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isStaleAstroCssHmrError } from './astro-hmr-console.mjs';
+import { isStaleAstroCssHmrError, assertAstroRecoveredStyles } from './astro-hmr-console.mjs';
 
 const staleUrl = 'http://127.0.0.1:4321/src/pages/index.astro?t=1792164382080&astro&type=style&index=1&lang.css';
 const viteUrl = 'http://127.0.0.1:4321/src/pages/index.astro?astro&type=style&index=1&lang.css';
@@ -25,5 +25,22 @@ test('rejects actual stylesheet and module errors', () => {
     'Failed to load resource: the server responded with a status of 500 [/src/pages/index.astro?astro&type=style&index=1&lang.css&broken]',
   ]) {
     assert.equal(isStaleAstroCssHmrError(entry), false, entry);
+  }
+});
+
+test('Astro stale HMR recovery must prove the final stylesheet is applied', () => {
+  const valid = {
+    rulePresent: true,
+    hookColor: 'rgb(85, 85, 85)',
+    pagePaddingLeft: '32px',
+  };
+  assert.doesNotThrow(() => assertAstroRecoveredStyles(valid));
+  for (const witness of [
+    { ...valid, rulePresent: false },
+    { ...valid, hookColor: 'rgb(0, 0, 0)' },
+    { ...valid, pagePaddingLeft: '0px' },
+    null,
+  ]) {
+    assert.throws(() => assertAstroRecoveredStyles(witness), /Astro final reload/);
   }
 });
