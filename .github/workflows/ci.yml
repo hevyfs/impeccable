@@ -220,7 +220,10 @@ jobs:
   rust-windows:
     runs-on: windows-latest
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # Required on core/Qt PRs too: this hosted Windows gate owns the full
+    # Rust browser integration suite that the service runner cannot execute
+    # reliably, as well as all workspace/unit coverage.
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.core == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -371,13 +374,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Test Rust workspace
+      - name: Test Rust workspace (non-Windows, full suite)
         if: runner.os != 'Windows'
         run: cargo test --workspace --no-fail-fast
 
-      - name: Test Rust workspace (Windows, serialized browser tests)
+      # The same HEAD is tested with the full Windows integration suite by
+      # rust-windows (GitHub-hosted), including browser-backed CLI captures.
+      # Chromium readiness on this unelevated Windows service is unreliable
+      # even with serialized tests; repeating those integrations here does not
+      # add a reliable merge gate. Keep all Rust lib/bin unit coverage and the
+      # source-built release engine on the self-hosted runner.
+      - name: Test Rust lib/bin targets (self-hosted Windows)
         if: runner.os == 'Windows'
-        run: cargo test --workspace --no-fail-fast -- --test-threads=1
+        run: cargo test --workspace --lib --bins --no-fail-fast -- --test-threads=1
 
       - name: Build release engine
         run: cargo build --release -p impeccable
