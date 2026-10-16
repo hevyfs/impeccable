@@ -56,11 +56,19 @@ No-index visual harnesses and internal inspectors live under `/labs/<subject>`. 
   dependency and is not needed to build/distribute the core skill.
 - To select a different installed Python executable, set
   `IMPECCABLE_PYTHON` to its path before running `bun run test:core`.
-- Required Linux and self-hosted CI jobs explicitly install **Python 3.12**;
-  the Windows-only *real QWidget offscreen smoke* uses a separate environment
-  with **PySide6_Essentials==6.8.3** (the pinned Qt test baseline). Contributors
-  do not need PySide6 to run `bun run test`; no Python packages are needed
-  for the stdlib Qt source tests.
+- **GitHub-hosted Node CI** provisions Python **3.12** through
+  `actions/setup-python`. On the **self-hosted Windows service runner**,
+  Python **3.11+ must be preinstalled** and accessible to the runner account.
+  The workflow discovers `py -3.12`, `py -3` or `python`, validates its
+  version, and exports its absolute executable path as `IMPECCABLE_PYTHON`.
+  It fails within two minutes if none is suitable; it does **not** run a
+  Python installer or modify system-wide registry entries on that runner.
+  Python updates and service-account permissions are runner maintenance.
+- The Windows-only *real QWidget offscreen smoke* creates a local virtualenv
+  with the same validated Python interpreter and installs
+  **PySide6_Essentials==6.8.3** (pinned Qt test baseline). Contributors do
+  not need PySide6 to run `bun run test`; no Python packages are required
+  for the standard-library Qt source regression tests.
 - The Windows smoke does not certify native themes or mixed-DPI graphics.
   Validate those on a genuine interactive Windows desktop separately.
 
