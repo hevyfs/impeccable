@@ -275,6 +275,29 @@ jobs:
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable${{ runner.os == 'Windows' && '.exe' || '' }}
         run: bun run test
 
+      - name: Run PySide6 QWidget integration smoke on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 10
+        env:
+          # A service-runner can capture real Qt widgets without an interactive desktop.
+          # This is NOT a compositor, native-theme or mixed-DPI acceptance test.
+          QT_QPA_PLATFORM: offscreen
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Get-Command py -ErrorAction SilentlyContinue) {
+            & py -3 -m venv .qt-native-venv
+          } else {
+            & python -m venv .qt-native-venv
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Python 3 virtual environment setup failed" }
+          $python = Join-Path $PWD ".qt-native-venv/Scripts/python.exe"
+          & $python -m pip install --disable-pip-version-check "PySide6_Essentials>=6.7,<7"
+          if ($LASTEXITCODE -ne 0) { throw "PySide6 Essentials installation failed" }
+          & $python tests/qt-native-tools/native_widget_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "Qt Widgets integration smoke failed" }
+
   # Behavior gate: replays the tests/oracle/ goldens against a release build
   # of the engine from THIS checkout (so a PR is judged on its own source,
   # not on the last published binary). Without this job the oracle only ever
