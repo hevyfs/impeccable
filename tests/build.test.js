@@ -420,7 +420,15 @@ describe('skill scripts payload', () => {
 
   test('the launcher is executable and VERSION matches ENGINE_VERSION', () => {
     const launcher = scripts.find((s) => s.name === 'impeccable');
-    expect(launcher.mode & 0o111).not.toBe(0);
+    if (process.platform === 'win32') {
+      // Windows does not expose POSIX executable bits for Git checkouts.
+      // The native launcher is impeccable.cmd; the POSIX shim is also
+      // distributed as a file with a valid shell shebang.
+      expect(scripts.some((script) => script.name === 'impeccable.cmd')).toBe(true);
+      expect(launcher.content.startsWith('#!')).toBe(true);
+    } else {
+      expect(launcher.mode & 0o111).not.toBe(0);
+    }
     const version = scripts.find((s) => s.name === 'VERSION');
     expect(version.content.trim()).toBe(fs.readFileSync(path.join(ROOT_DIR, 'ENGINE_VERSION'), 'utf-8').trim());
   });
