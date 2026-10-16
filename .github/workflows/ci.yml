@@ -385,9 +385,22 @@ jobs:
       - name: Validate generated distribution
         run: bun run build
 
-      - name: Run source-built test suite
+      # The oracle goldens are recorded with POSIX paths and a fixture that
+      # creates directory symlinks. Windows services without SeCreateSymbolicLink
+      # cannot replay those exact fixtures, and backslashes are semantic golden
+      # differences. Keep the *full* oracle gate in the dedicated hosted Linux
+      # `oracle` job; run every other default suite here against this PR's
+      # freshly built Windows engine (without weakening any oracle assertion).
+      - name: Run source-built suites (Windows, except POSIX oracle)
+        if: runner.os == 'Windows'
         env:
-          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable${{ runner.os == 'Windows' && '.exe' || '' }}
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable.exe
+        run: node scripts/run-tests.mjs core detector live framework plugin-e2e
+
+      - name: Run source-built test suite (non-Windows, including oracle)
+        if: runner.os != 'Windows'
+        env:
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
         run: bun run test
 
 
