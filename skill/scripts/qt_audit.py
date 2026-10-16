@@ -6,6 +6,7 @@ This is NOT a visual, accessibility or runtime verifier. Exit code 2 with
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import json
 import os
@@ -21,6 +22,143 @@ LIMITATIONS = [
     "Inspect the running native window for keyboard/focus, DPI, layout, state and theming.",
     "Warnings may be intentional on custom canvases or narrowly scoped widgets.",
 ]
+
+
+_UI_EVENTS = {
+    "paintEvent", "resizeEvent", "showEvent", "mouseMoveEvent",
+    "mousePressEvent", "mouseReleaseEvent", "keyPressEvent", "wheelEvent",
+}
+
+
+def _is_ui_callback(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if node.name in _UI_EVENTS or (
+        node.name.startswith("on_")
+        and node.name.endswith(("_clicked", "_changed", "_triggered", "_activated", "_timeout"))
+    ):
+        return True
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        name = target.id if isinstance(target, ast.Name) else (
+            target.attr if isinstance(target, ast.Attribute) else None
+        )
+        if name in {"Slot", "pyqtSlot"}:
+            return True
+    return False
+
+
+def _python_widget_hints(content: str, path: Path, root: Path) -> list[dict]:
+    """AST hints for PySide6 Widgets; do not mistake native Qt contracts for C++."""
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as exc:
+        return [finding(
+            path, root, exc.lineno or 1, "QT004", "advisory",
+            "Advanced Python review skipped (unsupported or invalid syntax)",
+            (exc.msg or "Python parse error"),
+            "Run with the project's Python version and inspect the source.",
+        )]
+
+    import_names: set[str] = set()
+    from_sleep: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "time":
+                    import_names.add(alias.asname or "time")
+        elif isinstance(node, ast.ImportFrom) and node.module == "time":
+            for alias in node.names:
+                if alias.name == "sleep":
+                    from_sleep.add(alias.asname or "sleep")
+
+    lines = content.splitlines()
+    found: list[dict] = []
+
+    def emit(node: ast.AST, rule: str, message: str, recommendation: str) -> None:
+        line = node.lineno
+        found.append(finding(
+            path, root, line, rule, "advisory", message,
+            lines[line - 1].strip(), recommendation,
+        ))
+
+    def blocking_sleep(call: ast.Call) -> bool:
+        name = call.func
+        return (
+            isinstance(name, ast.Attribute)
+            and name.attr == "sleep"
+            and isinstance(name.value, ast.Name)
+            and name.value.id in import_names
+        ) or (isinstance(name, ast.Name) and name.id in from_sleep)
+
+    class CallbackCalls(ast.NodeVisitor):
+        # Nested function definitions are not immediate callback execution.
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if blocking_sleep(node):
+                emit(
+                    node, "QT401", "Blocking sleep inside a Qt UI callback",
+                    "Use QTimer or a worker with queued signals; verify the GUI stays responsive.",
+                )
+            self.generic_visit(node)
+
+    class LoopCalls(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.depth = 0
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_For(self, node: ast.For) -> None:
+            self.depth += 1
+            self.generic_visit(node)
+            self.depth -= 1
+
+        def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+            self.visit_For(node)
+
+        def visit_While(self, node: ast.While) -> None:
+            self.depth += 1
+            self.generic_visit(node)
+            self.depth -= 1
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if (self.depth > 0 and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"setCellWidget", "setIndexWidget"}):
+                emit(
+                    node, "QT402", "Per-cell widget construction inside a loop may scale poorly",
+                    "Inspect row counts; prefer QAbstractItemModel and QStyledItemDelegate for large views.",
+                )
+            self.generic_visit(node)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if _is_ui_callback(node):
+                visitor = CallbackCalls()
+                for statement in node.body:
+                    visitor.visit(statement)
+            visitor = LoopCalls()
+            for statement in node.body:
+                visitor.visit(statement)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            signal = node.func.value
+            if (node.func.attr == "emit" and isinstance(signal, ast.Attribute)
+                    and signal.attr == "modelReset"):
+                emit(
+                    node, "QT403", "Direct modelReset emission may bypass model reset protocol",
+                    "Verify beginResetModel/endResetModel and model/proxy consistency.",
+                )
+
+    return sorted(found, key=lambda item: (item["line"], item["rule"]))
 
 
 def inspect_file(path: Path, root: Path) -> list[dict]:
@@ -73,6 +211,7 @@ def inspect_file(path: Path, root: Path) -> list[dict]:
                 path, root, token.start[0], rule, "advisory", message,
                 source_lines[token.start[0] - 1].strip(), recommendation,
             ))
+        results.extend(_python_widget_hints(content, path, root))
     if path.suffix.lower() == ".qss":
         source = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group().count("\n"), content, flags=re.S)
         for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", source):
