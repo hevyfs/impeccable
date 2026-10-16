@@ -369,7 +369,14 @@ export function createTransformer(config) {
         const scriptsOutDir = path.join(skillDir, 'scripts');
         ensureDir(scriptsOutDir);
         for (const script of skill.scripts) {
-          const scriptContent = replaceScriptProviderMarker(script.content, placeholderKey, provider);
+          const rawScriptContent = replaceScriptProviderMarker(script.content, placeholderKey, provider);
+          // Git checkouts on Windows may convert a POSIX shell launcher to
+          // CRLF. A /bin/sh shebang with CRLF fails as /bin/sh\\r at runtime
+          // in Git Bash and POSIX environments. Preserve LF in all provider
+          // copies regardless of the host used to build the distribution.
+          const scriptContent = script.name === 'impeccable'
+            ? rawScriptContent.replace(/\\r\\n/g, '\\n')
+            : rawScriptContent;
           const outPath = path.join(scriptsOutDir, script.name);
           writeFile(outPath, scriptContent);
           // The launcher must stay executable in every provider copy; a
