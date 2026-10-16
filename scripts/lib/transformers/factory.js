@@ -375,7 +375,7 @@ export function createTransformer(config) {
           // in Git Bash and POSIX environments. Preserve LF in all provider
           // copies regardless of the host used to build the distribution.
           const scriptContent = script.name === 'impeccable'
-            ? rawScriptContent.replace(/\\r\\n/g, '\\n')
+            ? rawScriptContent.replace(/\r\n/g, '\n')
             : rawScriptContent;
           const outPath = path.join(scriptsOutDir, script.name);
           writeFile(outPath, scriptContent);
