@@ -4,7 +4,7 @@
 // for recovery; the caller MUST reload and fail on any post-reload error.
 export function isStaleAstroCssHmrError(entry) {
   const value = String(entry || '');
-  const staleCssUrl = /\/src\/pages\/index\.astro\?(?:t=\d+&)?astro&type=style&index=1&lang\.css(?=\]|$)/;
+  const staleCssUrl = /\/src\/pages\/index\.astro\?(?:t=\d+&)?astro&type=style&index=1&lang\.css(?=\]|\. This could|$)/;
   if (!staleCssUrl.test(value)) return false;
   return /Failed to load resource: the server responded with a status of 500|\[vite\] Failed to reload/.test(value);
 }
