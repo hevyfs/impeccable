@@ -154,8 +154,8 @@ class FakePixmap:
         if not self.good:
             return False
         sample = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQ"
-            "VR42mP8/x8AAwMCAO+jtkQAAAAASUVORK5CYII="
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlE"
+            "QVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg=="
         )
         Path(destination).write_bytes(sample)
         return True
