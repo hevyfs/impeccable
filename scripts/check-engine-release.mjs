@@ -34,17 +34,34 @@ import {
 
 const NPM_REGISTRY = 'https://registry.npmjs.org';
 
-// A ranged GET is the most portable existence probe: GitHub release downloads
-// answer HEAD inconsistently across their 302 to object storage, but a
-// `Range: bytes=0-0` GET follows the redirect and returns 200/206 for a real
-// asset and 404 for a missing one without pulling the whole binary.
-async function urlExists(url) {
-  try {
-    const res = await fetch(url, { redirect: 'follow', headers: { Range: 'bytes=0-0' } });
-    return res.ok || res.status === 206;
-  } catch (err) {
-    return false;
+// A ranged GET is the most portable existence probe: release downloads may
+// answer HEAD inconsistently through their object-storage redirects. Retry a
+// negative result a bounded number of times: a public, already-published
+// GitHub asset can briefly return a failed CDN download. Persistent 404s
+// (and other failures) still fail the release gate.
+export async function probeReleaseUrl(url, {
+  headers = {},
+  fetchImpl = fetch,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  const attempts = 3;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetchImpl(url, { redirect: 'follow', headers });
+      // Do not buffer the binary: the existence gate needs status only.
+      // Cancel any response stream to release the connection promptly.
+      if (res.body?.cancel) await res.body.cancel().catch(() => {});
+      if (res.ok || res.status === 206) return true;
+    } catch {
+      // Network errors should be retried just like temporary CDN 404s.
+    }
+    if (attempt + 1 < attempts) await sleep(250 * (attempt + 1));
   }
+  return false;
+}
+
+async function urlExists(url) {
+  return probeReleaseUrl(url, { headers: { Range: 'bytes=0-0' } });
 }
 
 function npmPackageUrl(target, version) {
@@ -54,13 +71,7 @@ function npmPackageUrl(target, version) {
 }
 
 async function npmVersionExists(target, version) {
-  const url = npmPackageUrl(target, version);
-  try {
-    const res = await fetch(url, { redirect: 'follow' });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return probeReleaseUrl(npmPackageUrl(target, version));
 }
 
 /**
