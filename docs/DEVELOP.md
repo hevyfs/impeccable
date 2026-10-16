@@ -50,7 +50,19 @@ No-index visual harnesses and internal inspectors live under `/labs/<subject>`. 
 
 ### Prerequisites
 - Bun (fast JavaScript runtime and package manager)
-- No external dependencies required
+- **Python 3.11+ to run the default/core test suite**. The Qt scanner and
+  screenshot helper regression tests use only the Python standard library.
+  Python is a *development/test* dependency, **not** an Impeccable CLI runtime
+  dependency and is not needed to build/distribute the core skill.
+- To select a different installed Python executable, set
+  `IMPECCABLE_PYTHON` to its path before running `bun run test:core`.
+- Required Linux and self-hosted CI jobs explicitly install **Python 3.12**;
+  the Windows-only *real QWidget offscreen smoke* uses a separate environment
+  with **PySide6_Essentials==6.8.3** (the pinned Qt test baseline). Contributors
+  do not need PySide6 to run `bun run test`; no Python packages are needed
+  for the stdlib Qt source tests.
+- The Windows smoke does not certify native themes or mixed-DPI graphics.
+  Validate those on a genuine interactive Windows desktop separately.
 
 ### Commands
 
@@ -138,7 +150,8 @@ scripts/
 ## Testing
 
 ```bash
-bun run test                  # Default suite — unit + static fixtures (no API keys needed)
+bun run test                  # Default suite — requires Python 3.11+ for Qt source tests (no API keys)
+bun run test:core             # Core tests, including Qt source/capture regressions; Python stdlib only
 bun run test:live-e2e         # Opt-in — full-cycle live-mode E2E across framework fixtures (~2 min, needs `npx playwright install chromium` once)
 bun run test:skill-behavior   # Opt-in — LLM-backed checks that the SKILL.md Setup flow actually drives the agent (~5 min, costs cents, needs `.env`)
 ```
