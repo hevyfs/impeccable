@@ -60,6 +60,13 @@ describe('test suite registry', () => {
     }
   });
 
+  it('selects the core suite when Qt Python regression sources change', () => {
+    const path = 'tests/qt-native-tools/test_qt_tools.py';
+    assert.equal(matchesSuiteTriggers('core', [path]), true);
+    assert.equal(matchesSuiteTriggers('core', ['tests/qt-native-tools/new_behavior.py']), true);
+    assert.ok(suiteFiles(['core']).includes('tests/qt-native-tools.test.mjs'));
+  });
+
   it('never lets a test file trigger only suites that do not run it', () => {
     const allSuiteNames = Object.keys(SUITES);
     for (const file of findTestFiles()) {
