@@ -113,6 +113,37 @@ Use Qt to make a native desktop product, not to host a browser-shaped product.
 - **Appearance pass.** Verify shipped light/dark/high-contrast behavior, inactive windows, disabled controls, selection, focus, tooltips, plots/canvases, and validation. <!-- rule:qt-verify-appearance -->
 - **Automate interaction regressions.** Reuse the project's QTest/pytest-qt tests when available; add focused tests for tab/shortcut/state behavior rather than snapshotting implementation details. <!-- rule:qt-verify-ui-tests -->
 
+## Executable Qt evidence path (PySide6/PyQt6)
+
+This fork includes two small Python standard-library helpers shipped in the installed Impeccable skill under `scripts/`, alongside the normal launcher. They augment this Qt-specific review; they do not replace the Rust web detector, run automatically as a hook, or change a user's application.
+
+**Source hints:** in the target application's repository root run `python "{{scripts_path}}/qt_audit.py" . --json`. The scanner inventories Python, QSS, QML and Designer UI files, emits contextual warnings about `setGeometry()`, fixed widget sizes, broad `QWidget` QSS styling and literal fixed QML width/height. It cannot see dynamic layout behavior, prove accessibility, or verify images. `.ui` files are inventory only. Confirm every finding from source before acting. `--strict` returns exit 2 if advisory warnings exist; it does not mean the app is broken.
+
+**Actual rendered widget:** a project-owned `pytest-qt` fixture or QTest script creates the **real** widget, loads representative application data and waits for relevant signals before invoking `qt_capture.capture_window`. Example (the `result_widget` fixture must be implemented by the consuming project):
+
+```python
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path("{{scripts_path}}").resolve()))
+from qt_capture import capture_window
+
+def test_real_results(qtbot, result_widget, tmp_path):
+    qtbot.addWidget(result_widget)
+    # Arrange a real project, select the intended view, await settled Qt signals.
+    manifests = capture_window(
+        result_widget, tmp_path / "native-evidence",
+        case="results-populated", scenario="calculated-results",
+        theme="application", sizes=((1100, 720), (1440, 900)),
+    )
+    assert len(manifests) == 2
+    # Separately assert focus, Tab/Shift+Tab, shortcuts, actions and state.
+```
+
+Every PNG is accompanied by a JSON manifest with requested and actual logical dimensions, Qt version/binding, OS, scale parameters, device pixel ratio, theme and scenario. The helper checks that Qt honored each requested size; it rejects null grabs, failed saves and invalid PNGs, and restores the widget's original dimensions and explicit visibility state.
+
+A real QWidget/QPixmap with decodable PNG earns `native-raster-observation`; fake widgets produce `simulated-capture` and cannot support a claim about rendered desktop quality. `QT_QPA_PLATFORM=offscreen` is useful for deterministic regressions but **not evidence of actual Windows desktop behavior**. Inspect the screenshot itself, use the correct OS and DPI hardware for the final acceptance, and verify interactions with real Qt tests. Cover error, empty, populated and loading states; minimum, laptop and wide window sizes; and the application's shipped visual themes. A missing platform/matrix cell is **not tested**, never "passed".
+
 ## Qt Widgets vs Qt Quick
 
 Choose by interaction needs, not trend. This reference is authoritative for Qt Widgets behavior and desktop conventions. Qt Quick shares the desktop principles here, but its Controls, styling, focus, layout, and scene-graph details require Qt Quick-specific guidance rather than treating QWidget rules as literal implementation instructions.
