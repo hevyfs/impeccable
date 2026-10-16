@@ -30,6 +30,12 @@ describe('Cursor native plugin', () => {
     write('dist/cursor/.cursor/skills/impeccable/reference/polish.md', sample);
     write('dist/cursor/.cursor/skills/impeccable/scripts/impeccable', '#!/bin/sh\nprintf "%s\\n" "$PWD" "$1"\ncat\nexit 2\n');
     fs.chmodSync(path.join(root, 'dist/cursor/.cursor/skills/impeccable/scripts/impeccable'), 0o755);
+    // The real Cursor distribution ships both POSIX and Windows launchers.
+    // Include the Windows entrypoint in this synthetic provider fixture so
+    // its staging/preservation assertion tests a real input rather than
+    // expecting stageCursorPlugin to invent a missing file.
+    write('dist/cursor/.cursor/skills/impeccable/scripts/impeccable.cmd',
+      '@echo off\r\nexit /b 0\r\n');
     write('dist/cursor/.cursor/agents/impeccable-asset-producer.md', sample);
   });
   afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
