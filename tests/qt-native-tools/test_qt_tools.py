@@ -109,6 +109,76 @@ class StaticAuditTests(unittest.TestCase):
             findings = audit.audit(root)["findings"]
             self.assertEqual([(v["rule"], v["line"]) for v in findings], [("QT201", 4)])
 
+    def test_blocking_sleep_in_ui_handlers_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "callbacks.py").write_text(
+                "import time as clock\n"
+                "from time import sleep as wait\n"
+                "class Window:\n"
+                "    def paintEvent(self, event):\n"
+                "        clock.sleep(0.1)\n"
+                "    @Slot()\n"
+                "    def refresh(self):\n"
+                "        wait(1)\n"
+                "    def background(self):\n"
+                "        clock.sleep(10)\n"
+                "    def on_save_clicked(self):\n"
+                "        example = 'time.sleep(3)'\n"
+                "        clock.sleep(0.5)\n",
+                encoding="utf-8",
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual(
+                [(f["rule"], f["line"]) for f in findings],
+                [("QT401", 5), ("QT401", 8), ("QT401", 13)],
+            )
+
+    def test_cell_widget_loop_is_advisory_not_single_widget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "table.py").write_text(
+                "class Results:\n"
+                "    def load(self, rows):\n"
+                "        for row in rows:\n"
+                "            self.table.setCellWidget(row, 2, build())\n"
+                "        self.table.setIndexWidget(index, editor)\n"
+                "        for row in rows:\n"
+                "            self.table.setIndexWidget(row, editor)\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                [(f["rule"], f["line"]) for f in audit.audit(root)["findings"]],
+                [("QT402", 4), ("QT402", 7)],
+            )
+
+    def test_model_reset_protocol_hint_and_safe_pair(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "model.py").write_text(
+                "class Model:\n"
+                "    def reset_bad(self):\n"
+                "        self.modelReset.emit()\n"
+                "    def reset_good(self):\n"
+                "        self.beginResetModel()\n"
+                "        self.endResetModel()\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                [(f["rule"], f["line"]) for f in audit.audit(root)["findings"]],
+                [("QT403", 3)],
+            )
+
+    def test_ast_parse_incompatibility_is_advisory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "incompatible.py").write_text(
+                "def broken(:\n    pass\n", encoding="utf-8",
+            )
+            findings = audit.audit(root)["findings"]
+            self.assertEqual([f["rule"] for f in findings], ["QT004"])
+            self.assertEqual(findings[0]["severity"], "advisory")
+
     def test_cli_json_and_strict_exit_code(self):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "form.py").write_text(
