@@ -173,7 +173,7 @@ class StaticAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "incompatible.py").write_text(
-                "def broken(:\n    pass\n", encoding="utf-8",
+                "def broken():\n    return 1 2\n", encoding="utf-8",
             )
             findings = audit.audit(root)["findings"]
             self.assertEqual([f["rule"] for f in findings], ["QT004"])
