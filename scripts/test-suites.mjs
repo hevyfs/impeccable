@@ -34,6 +34,7 @@ export const SUITES = {
       ...COMMON_INFRA_PATTERNS,
       /^scripts\/(?!build-extension)/,
       /^skill\/(SKILL\.src\.md|agents\/|reference\/|scripts\/)/,
+      /^tests\/qt-native-tools\//,
       /^ENGINE_VERSION$/,
       /^README(\.npm)?\.md$/,
       /^vscode\//,
