@@ -71,6 +71,7 @@ import {
 } from './live-e2e/ui.mjs';
 import { runSteerSmoke } from './live-e2e/steer.mjs';
 import { runPreActions, waitForCyclingRobust } from './live-e2e/preactions.mjs';
+import { isStaleAstroCssHmrError } from './live-e2e/astro-hmr-console.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -152,17 +153,6 @@ const LIVE_TREE_URL_RE = /\.impeccable-live|impeccable\/live\/preview/i;
 // The two framework dev-mode notices every React fixture emits.
 const FRAMEWORK_NOISE_RE = /Download the React DevTools|StrictMode/i;
 
-// Astro dev/HMR can request the previous <style> virtual module after the
-// carbonize cleanup deletes the temporary second style block. The old index=1
-// URL becomes invalid even though the final source retains a valid index=0.
-// This is *not* a general 500 allowlist: a clean reload must prove the page
-// and stylesheet recover, and every other console error still fails.
-function isStaleAstroCssHmrError(entry) {
-  const value = String(entry || '');
-  const staleCssUrl = /\/src\/pages\/index\.astro\?(?:t=\d+&)?astro&type=style&index=1&lang\.css(?:\b|$)/;
-  if (!staleCssUrl.test(value)) return false;
-  return /Failed to load resource: the server responded with a status of 500|\[vite\] Failed to reload/.test(value);
-}
 
 // Chromium's resource-failure console line. Only the favicon flavour is
 // allowlisted; a favicon is not part of any fixture and its absence proves
