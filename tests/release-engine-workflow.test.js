@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { probeReleaseUrl } from '../scripts/check-engine-release.mjs';
 
 const workflow = Bun.YAML.parse(readFileSync(new URL('../.github/workflows/release-engine.yml', import.meta.url), 'utf8'));
 const action = (job, name) => job.steps.find(step => step.uses?.startsWith(`${name}@`));
@@ -68,5 +69,51 @@ describe('engine release signing boundary', () => {
         if (step.uses) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
       }
     }
+  });
+});
+
+describe('published engine availability gate', () => {
+  test('retries a temporary CDN 404 and still accepts the published binary', async () => {
+    const statuses = [404, 503, 206];
+    const calls = [];
+    const result = await probeReleaseUrl('https://example.test/engine-v0.1.6/binary', {
+      headers: { Range: 'bytes=0-0' },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        const status = statuses.shift();
+        return { ok: status >= 200 && status < 300, status, body: { cancel: async () => {} } };
+      },
+      sleep: async () => {},
+    });
+    expect(result).toBe(true);
+    expect(calls).toHaveLength(3);
+    expect(calls.every((x) => x.options.headers.Range === 'bytes=0-0')).toBe(true);
+  });
+
+  test('persistent missing assets still fail closed after bounded attempts', async () => {
+    let calls = 0;
+    const result = await probeReleaseUrl('https://example.test/absent', {
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 404, body: null };
+      },
+      sleep: async () => {},
+    });
+    expect(result).toBe(false);
+    expect(calls).toBe(3);
+  });
+
+  test('a successful probe does not fetch again and connection failures are retried', async () => {
+    let calls = 0;
+    const result = await probeReleaseUrl('https://example.test/released', {
+      fetchImpl: async () => {
+        calls++;
+        if (calls === 1) throw new Error('temporary connection reset');
+        return { ok: true, status: 200, body: null };
+      },
+      sleep: async () => {},
+    });
+    expect(result).toBe(true);
+    expect(calls).toBe(2);
   });
 });
