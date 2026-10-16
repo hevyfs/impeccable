@@ -152,6 +152,18 @@ const LIVE_TREE_URL_RE = /\.impeccable-live|impeccable\/live\/preview/i;
 // The two framework dev-mode notices every React fixture emits.
 const FRAMEWORK_NOISE_RE = /Download the React DevTools|StrictMode/i;
 
+// Astro dev/HMR can request the previous <style> virtual module after the
+// carbonize cleanup deletes the temporary second style block. The old index=1
+// URL becomes invalid even though the final source retains a valid index=0.
+// This is *not* a general 500 allowlist: a clean reload must prove the page
+// and stylesheet recover, and every other console error still fails.
+function isStaleAstroCssHmrError(entry) {
+  const value = String(entry || '');
+  const staleCssUrl = /\/src\/pages\/index\.astro\?(?:t=\d+&)?astro&type=style&index=1&lang\.css(?:\b|$)/;
+  if (!staleCssUrl.test(value)) return false;
+  return /Failed to load resource: the server responded with a status of 500|\[vite\] Failed to reload/.test(value);
+}
+
 // Chromium's resource-failure console line. Only the favicon flavour is
 // allowlisted; a favicon is not part of any fixture and its absence proves
 // nothing about live mode.
@@ -719,9 +731,31 @@ for (const { name, fixture } of fixtures) {
           }`,
         );
 
-        // 10. Console hygiene — no errors during the whole flow.
+        // 10. Console hygiene — no errors during the whole flow. Astro is
+        // exceptional only for stale temporary CSS HMR URLs left by cleanup;
+        // require clean final reload + DOM to prove those were transient.
         if (fixture.runtime.probe?.expectConsoleClean) {
-          const realErrors = consoleErrors.filter((e) => !isBenignConsoleError(e));
+          const staleAstroErrors = name === 'astro-vite7'
+            ? consoleErrors.filter(isStaleAstroCssHmrError)
+            : [];
+          if (staleAstroErrors.length > 0) {
+            const priorCount = consoleErrors.length;
+            t.diagnostic(
+              `Astro stale style HMR during carbonize: ${staleAstroErrors.length} console entries. Verifying recovered page on a clean reload.`,
+            );
+            await page.reload({ waitUntil: 'load' });
+            await waitForAcceptedDom(page, domSelector, {
+              allowVariantRoot: sourceShadow, timeout: 20_000,
+            });
+            const reloadErrors = consoleErrors.slice(priorCount).filter((e) => !isBenignConsoleError(e));
+            assert.deepEqual(
+              reloadErrors, [],
+              `Astro final reload still has console errors:\n${reloadErrors.join('\n')}`,
+            );
+          }
+          const realErrors = consoleErrors.filter((e) =>
+            !isBenignConsoleError(e)
+            && !(name === 'astro-vite7' && isStaleAstroCssHmrError(e)));
           if (realErrors.length > 0) {
             t.diagnostic('--- console errors ---');
             for (const e of realErrors) t.diagnostic(e);
