@@ -113,6 +113,12 @@ Use Qt to make a native desktop product, not to host a browser-shaped product.
 - **Appearance pass.** Verify shipped light/dark/high-contrast behavior, inactive windows, disabled controls, selection, focus, tooltips, plots/canvases, and validation. <!-- rule:qt-verify-appearance -->
 - **Automate interaction regressions.** Reuse the project's QTest/pytest-qt tests when available; add focused tests for tab/shortcut/state behavior rather than snapshotting implementation details. <!-- rule:qt-verify-ui-tests -->
 
+## PySide6 / PyQt6-specific code and UX review
+
+When assessing Python Qt Widgets, also read [qt-python-review.md](qt-python-review.md). It adapts useful Qt Company UI-design and Qt C++ review **concepts** into Python-specific checks for `QAbstractItemModel` mutation contracts, Qt/Python object lifetime, GUI-thread ownership, long-running calculations, per-cell widgets, accessibility, localization and high-density engineering plots. Do not execute C++ lint rules on Python or apply QML-style prescriptions to Widgets.
+
+The portable source scanner now includes three optional AST advisories: `QT401` blocking `time.sleep` in a named Qt callback, `QT402` `setCellWidget`/`setIndexWidget` in loops, and `QT403` direct `modelReset.emit()`. These are triage hints; confirm object type, control flow and runtime impact before reporting an issue. For exact binding-specific API behavior, prefer the matching Qt for Python documentation version; [Qt Documentation MCP](https://github.com/TheQtCompanyRnD/agent-skills/tree/main/mcp/qt-documentation-mcp) is optional, not required to run this skill.
+
 ## Executable Qt evidence path (PySide6/PyQt6)
 
 This fork includes two small Python standard-library helpers shipped in the installed Impeccable skill under `scripts/`, alongside the normal launcher. They augment this Qt-specific review; they do not replace the Rust web detector, run automatically as a hook, or change a user's application.
