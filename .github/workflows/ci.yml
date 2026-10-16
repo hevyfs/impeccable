@@ -287,7 +287,7 @@ jobs:
             if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { continue }
             $selector = @($candidate.arguments)
             try {
-              $output = & $command @selector -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1); print(sys.executable)' 2>$null
+              $output = & $command @selector -c 'import sys; print(sys.executable); sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>$null
               if ($LASTEXITCODE -ne 0) { continue }
               $path = [string]($output | Select-Object -Last 1)
               if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
