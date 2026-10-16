@@ -74,6 +74,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Setup Python for mandatory Qt source tests
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: '3.12'
+
       - name: Setup Bun
         if: runner.os != 'Windows'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -106,6 +111,8 @@ jobs:
         run: bun install
 
       - name: Run core tests
+        env:
+          IMPECCABLE_PYTHON: python
         run: bun run test:core
 
       - name: Install Puppeteer browser
@@ -253,6 +260,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Python for mandatory Qt source tests
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
+        with:
+          python-version: '3.12'
+
       - name: Setup Bun
         if: runner.os != 'Windows'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -300,6 +312,7 @@ jobs:
 
       - name: Run source-built test suite
         env:
+          IMPECCABLE_PYTHON: python
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable${{ runner.os == 'Windows' && '.exe' || '' }}
         run: bun run test
 
@@ -314,14 +327,11 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          if (Get-Command py -ErrorAction SilentlyContinue) {
-            & py -3 -m venv .qt-native-venv
-          } else {
-            & python -m venv .qt-native-venv
-          }
+          # setup-python provisions an exact Python version for this job.
+          & python -m venv .qt-native-venv
           if ($LASTEXITCODE -ne 0) { throw "Python 3 virtual environment setup failed" }
           $python = Join-Path $PWD ".qt-native-venv/Scripts/python.exe"
-          & $python -m pip install --disable-pip-version-check "PySide6_Essentials>=6.7,<7"
+          & $python -m pip install --disable-pip-version-check --only-binary=:all: "PySide6_Essentials==6.8.3"
           if ($LASTEXITCODE -ne 0) { throw "PySide6 Essentials installation failed" }
           & $python tests/qt-native-tools/native_widget_smoke.py
           if ($LASTEXITCODE -ne 0) { throw "Qt Widgets integration smoke failed" }
