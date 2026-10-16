@@ -261,9 +261,52 @@ jobs:
           node-version: 24
 
       - name: Setup Python for mandatory Qt source tests
+        if: runner.os != 'Windows'
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.0.0
         with:
           python-version: '3.12'
+
+      # The Windows runner is a non-elevated service: setup-python can attempt
+      # an MSI registry installation and stall until the whole job times out.
+      # Python must already be installed for the service account. Resolve the
+      # real executable once and use it for both the unittest gate and Qt smoke.
+      - name: Resolve preinstalled Python on self-hosted Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidates = @(
+            @{ exe = 'py'; arguments = @('-3.12') },
+            @{ exe = 'py'; arguments = @('-3') },
+            @{ exe = 'python'; arguments = @() }
+          )
+          $python = $null
+          foreach ($candidate in $candidates) {
+            $command = $candidate.exe
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { continue }
+            $selector = @($candidate.arguments)
+            try {
+              $output = & $command @selector -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1); print(sys.executable)' 2>$null
+              if ($LASTEXITCODE -ne 0) { continue }
+              $path = [string]($output | Select-Object -Last 1)
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+              & $path -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'
+              if ($LASTEXITCODE -ne 0) { continue }
+              $python = (Resolve-Path -LiteralPath $path).ProviderPath
+              break
+            } catch {
+              # Try the next installed interpreter without provisioning packages.
+              continue
+            }
+          }
+          if (-not $python) {
+            throw 'Python 3.11+ must be preinstalled and accessible to the self-hosted Windows runner service account (py -3.12, py -3 or python). No installer runs in this job.'
+          }
+          "IMPECCABLE_PYTHON=$python" >> $env:GITHUB_ENV
+          & $python --version
+          if ($LASTEXITCODE -ne 0) { throw 'Resolved Python is not executable' }
+          Write-Host "Validated preinstalled Python at: $python"
 
       - name: Setup Bun
         if: runner.os != 'Windows'
@@ -312,7 +355,6 @@ jobs:
 
       - name: Run source-built test suite
         env:
-          IMPECCABLE_PYTHON: python
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable${{ runner.os == 'Windows' && '.exe' || '' }}
         run: bun run test
 
@@ -327,8 +369,9 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
           $ErrorActionPreference = 'Stop'
-          # setup-python provisions an exact Python version for this job.
-          & python -m venv .qt-native-venv
+          # Use the same validated preinstalled interpreter as the core tests.
+          if (-not $env:IMPECCABLE_PYTHON) { throw 'Validated Python interpreter missing' }
+          & $env:IMPECCABLE_PYTHON -m venv .qt-native-venv
           if ($LASTEXITCODE -ne 0) { throw "Python 3 virtual environment setup failed" }
           $python = Join-Path $PWD ".qt-native-venv/Scripts/python.exe"
           & $python -m pip install --disable-pip-version-check --only-binary=:all: "PySide6_Essentials==6.8.3"
