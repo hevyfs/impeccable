@@ -80,5 +80,8 @@ test('Qt native scanner and capture helper regression suite', async () => {
       `Critical Qt regression ${name} was not executed:\n${output}`,
     );
   }
-  assert.match(output, /(?:^|\n)OK\s*(?:\n|$)/m);
+  // Windows Python's unittest output uses CRLF and reports "(skipped=N)"
+  // when symlink privileges are unavailable. A successful unittest exit
+  // with a correctly reported summary is still a real executed test run.
+  assert.match(output, /(?:^|\r?\n)OK(?: \(skipped=\d+\))?\s*(?:\r?\n|$)/m);
 });
