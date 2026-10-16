@@ -86,7 +86,21 @@ jobs:
         run: |
           $version = (Get-Content .bun-version).Trim()
           npm install -g "bun@$version"
+          if ($LASTEXITCODE -ne 0) { throw "Bun installation failed" }
+          # npm installs bun.cmd on Windows; Node child_process.spawn('bun')
+          # needs the actual bun.exe directory on PATH (not only the shim).
+          $npmRoot = ((& npm root -g) | Select-Object -Last 1).Trim()
+          $bunPackage = Join-Path $npmRoot "bun"
+          $bunExecutable = Get-ChildItem -Path $bunPackage -Filter "bun.exe" -File -Recurse |
+            Select-Object -First 1
+          if (-not $bunExecutable) { throw "Native bun.exe was not found under $bunPackage" }
+          $binDir = $bunExecutable.DirectoryName
+          $env:PATH = "$binDir$([IO.Path]::PathSeparator)$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
           bun --version
+          if ($LASTEXITCODE -ne 0) { throw "Native Bun validation failed" }
+          node -e 'const p=require("node:child_process").spawnSync("bun",["--version"],{encoding:"utf8"}); if(p.error||p.status!==0){console.error(p.error||p.stderr);process.exit(1)};console.log(p.stdout.trim())'
+          if ($LASTEXITCODE -ne 0) { throw "Node could not spawn native Bun" }
 
       - name: Install dependencies
         run: bun install
@@ -251,7 +265,21 @@ jobs:
         run: |
           $version = (Get-Content .bun-version).Trim()
           npm install -g "bun@$version"
+          if ($LASTEXITCODE -ne 0) { throw "Bun installation failed" }
+          # npm installs bun.cmd on Windows; Node child_process.spawn('bun')
+          # needs the actual bun.exe directory on PATH (not only the shim).
+          $npmRoot = ((& npm root -g) | Select-Object -Last 1).Trim()
+          $bunPackage = Join-Path $npmRoot "bun"
+          $bunExecutable = Get-ChildItem -Path $bunPackage -Filter "bun.exe" -File -Recurse |
+            Select-Object -First 1
+          if (-not $bunExecutable) { throw "Native bun.exe was not found under $bunPackage" }
+          $binDir = $bunExecutable.DirectoryName
+          $env:PATH = "$binDir$([IO.Path]::PathSeparator)$env:PATH"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
           bun --version
+          if ($LASTEXITCODE -ne 0) { throw "Native Bun validation failed" }
+          node -e 'const p=require("node:child_process").spawnSync("bun",["--version"],{encoding:"utf8"}); if(p.error||p.status!==0){console.error(p.error||p.stderr);process.exit(1)};console.log(p.stdout.trim())'
+          if ($LASTEXITCODE -ne 0) { throw "Node could not spawn native Bun" }
 
       - name: Install dependencies
         run: bun install
