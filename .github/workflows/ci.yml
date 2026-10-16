@@ -394,17 +394,17 @@ jobs:
       - name: Validate generated distribution
         run: bun run build
 
-      # The oracle goldens are recorded with POSIX paths and a fixture that
-      # creates directory symlinks. Windows services without SeCreateSymbolicLink
-      # cannot replay those exact fixtures, and backslashes are semantic golden
-      # differences. Keep the *full* oracle gate in the dedicated hosted Linux
-      # `oracle` job; run every other default suite here against this PR's
-      # freshly built Windows engine (without weakening any oracle assertion).
-      - name: Run source-built suites (Windows, except POSIX oracle)
+      # The Windows service lacks POSIX symlinks for oracle fixtures and has
+      # intermittently hung on live-mode browser/server tests (detached child
+      # processes remain alive even after assertions fail). All strict oracle,
+      # live and framework suites are instead exercised against the exact PR's
+      # source-built engine in the mandatory hosted Linux `oracle` job. Keep
+      # this local runner's build, Qt smoke, core, detector and plugin tests.
+      - name: Run source-built suites (Windows service)
         if: runner.os == 'Windows'
         env:
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable.exe
-        run: node scripts/run-tests.mjs core detector live framework plugin-e2e
+        run: node scripts/run-tests.mjs core detector plugin-e2e
 
       - name: Run source-built test suite (non-Windows, including oracle)
         if: runner.os != 'Windows'
@@ -421,7 +421,7 @@ jobs:
   oracle:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.oracle == 'true' || needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.oracle == 'true' || needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -451,6 +451,14 @@ jobs:
         env:
           IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
         run: node tests/oracle/run.mjs
+
+      # Source-built live/framework regression suites are retained as required
+      # coverage on a hosted POSIX runner, not silently skipped because the
+      # non-elevated Windows service cannot reliably own their server trees.
+      - name: Run source-built live and framework suites
+        env:
+          IMPECCABLE_BIN: ${{ github.workspace }}/target/release/impeccable
+        run: node scripts/run-tests.mjs live framework
 
   # Release-order guard (triage decision D4). Verifies that the engine release for
   # the pinned ENGINE_VERSION is fully published — the five dist binaries + .sha256
