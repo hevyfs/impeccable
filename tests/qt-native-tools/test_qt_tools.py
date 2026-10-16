@@ -55,7 +55,7 @@ class StaticAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "bom.py").write_bytes(
-                b"\\xef\\xbb\\xbfw.setGeometry(0, 0, 800, 600)\\n"
+                b"\xef\xbb\xbfw.setGeometry(0, 0, 800, 600)\n"
             )
             findings = audit.audit(root)["findings"]
             self.assertEqual(
@@ -67,9 +67,9 @@ class StaticAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "legacy.py").write_bytes(
-                b"# coding: latin-1\\n"
-                b"label = 'caf\\xe9'\\n"
-                b"widget.setFixedHeight(200)\\n"
+                b"# coding: latin-1\n"
+                b"label = 'caf\xe9'\n"
+                b"widget.setFixedHeight(200)\n"
             )
             findings = audit.audit(root)["findings"]
             self.assertEqual(
@@ -81,7 +81,7 @@ class StaticAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "bad_bytes.py").write_bytes(
-                b"# coding: utf-8\\nlabel = '\\xff'\\n"
+                b"# coding: utf-8\nlabel = '\xff'\n"
             )
             findings = audit.audit(root)["findings"]
             self.assertEqual([item["rule"] for item in findings], ["QT000"])
@@ -91,7 +91,7 @@ class StaticAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "unknown.py").write_bytes(
-                b"# coding: made-up-charset\\nx = 1\\n"
+                b"# coding: made-up-charset\nx = 1\n"
             )
             findings = audit.audit(root)["findings"]
             self.assertEqual([item["rule"] for item in findings], ["QT000"])
