@@ -163,9 +163,19 @@ def _python_widget_hints(content: str, path: Path, root: Path) -> list[dict]:
 
 def inspect_file(path: Path, root: Path) -> list[dict]:
     try:
-        content = path.read_text(encoding="utf-8")
-    except (UnicodeError, OSError) as exc:
-        return [finding(path, root, 1, "QT000", "error", "Unable to read source", str(exc))]
+        if path.suffix.lower() == ".py":
+            # Match CPython's source decoding: UTF-8 BOM and PEP 263 coding
+            # cookies, including legacy encodings used in valid Python files.
+            # Syntax errors after decoding remain separate QT004 advisories.
+            with tokenize.open(path) as source:
+                content = source.read()
+        else:
+            content = path.read_text(encoding="utf-8")
+    except (SyntaxError, UnicodeError, LookupError, OSError) as exc:
+        return [finding(
+            path, root, 1, "QT000", "error",
+            "Unable to decode or read source", str(exc),
+        )]
     results: list[dict] = []
     if path.suffix.lower() == ".py":
         # Tokenize rather than searching source lines: comments, docstrings and
